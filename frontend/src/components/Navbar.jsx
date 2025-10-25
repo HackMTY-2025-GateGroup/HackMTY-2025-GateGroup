@@ -37,20 +37,21 @@ const Navbar = () => {
 
   return (
     <nav className="fixed top-0 left-0 z-50 w-full border-b border-border bg-card">
-      <div className="flex h-16 items-center px-5 py-3 gap-4">
+      <div className="flex h-16 items-center px-5 py-8 gap-4">
         <div className="flex flex-1 items-center gap-4">
           <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
             OpSight
           </h1>
         </div>
-
         <div className="flex items-center gap-2">
+        {/*
           <Button variant="ghost" size="icon" className="relative">
             <Bell className="h-5 w-5" />
             <span className="absolute -top-1 -right-1 h-4 w-4 p-3 rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground flex items-center justify-center">
               3
             </span>
           </Button>
+        */}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
