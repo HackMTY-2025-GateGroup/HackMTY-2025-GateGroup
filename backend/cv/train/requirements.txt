@@ -1,0 +1,8 @@
+ultralytics>=8.3.0
+onnxruntime>=1.19.0
+onnx>=1.16.0
+numpy
+opencv-python
+# Core ML export is optional and usually macOS-only
+coremltools; platform_system == "Darwin"
+requests
