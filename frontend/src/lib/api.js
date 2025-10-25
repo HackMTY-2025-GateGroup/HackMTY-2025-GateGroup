@@ -52,6 +52,29 @@ export async function fetchJson(keyOrPath, options = {}) {
   return body;
 }
 
+export async function uploadMultipart(keyOrPath, formData, options = {}) {
+  const url = resolvePath(keyOrPath);
+  const token = localStorage.getItem('token');
+
+  // Do NOT set Content-Type for multipart; the browser will set the boundary
+  const headers = {
+    ...(options.headers || {}),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(url, { method: options.method || 'POST', body: formData, headers, ...options });
+  const body = await parseResponse(res);
+
+  if (!res.ok) {
+    const err = new Error(body?.message || res.statusText || 'Upload error');
+    err.status = res.status;
+    err.response = body;
+    throw err;
+  }
+
+  return body;
+}
+
 export const get = (path, opts) => fetchJson(path, { method: 'GET', ...opts });
 export const post = (path, body, opts) =>
   fetchJson(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined, ...opts });
@@ -72,4 +95,5 @@ export default {
   put,
   del,
   fetchUsers,
+  uploadMultipart
 };
