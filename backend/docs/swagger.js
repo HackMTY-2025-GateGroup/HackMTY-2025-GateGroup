@@ -199,6 +199,26 @@ const options = {
             created_at: { type: 'string', format: 'date-time' },
           },
         },
+        Supplier: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            contact: { type: 'object' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        PurchaseOrder: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            supplier_id: { type: 'string', format: 'uuid' },
+            created_by: { type: 'string', format: 'uuid' },
+            items: { type: 'object' },
+            status: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
         Error: {
           type: 'object',
           properties: {
@@ -232,6 +252,8 @@ const options = {
       { name: 'Lounges', description: 'Gestión de salas' },
       { name: 'Movements', description: 'Movimientos de inventario' },
       { name: 'Alerts', description: 'Alertas de caducidad' },
+      { name: 'Suppliers', description: 'Gestión de proveedores' },
+      { name: 'Purchase Orders', description: 'Órdenes de compra' },
       { name: 'Analytics', description: 'Análisis y reportes' },
     ],
     // security: [

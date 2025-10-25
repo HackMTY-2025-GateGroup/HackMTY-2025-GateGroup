@@ -9,6 +9,8 @@ import {
   addInventoryItem,
   updateInventoryItem,
   deleteInventoryItem,
+  getAllMovements,
+  createMovement,
 } from '../../controllers/inventoryController.js';
 import { protect, authorize } from '../middleware/auth.js';
 import { ROLES } from '../../config/constants.js';
@@ -321,5 +323,103 @@ router.put('/:id/items/:itemId', updateInventoryItem);
  */
 // router.delete('/:id/items/:itemId', authorize(ROLES.ADMIN), deleteInventoryItem); // COMMENTED FOR TESTING
 router.delete('/:id/items/:itemId', deleteInventoryItem);
+
+/**
+ * @swagger
+ * /api/inventories/movements:
+ *   get:
+ *     tags: [Movements]
+ *     summary: Obtener todos los movimientos de inventario
+ *     description: Retorna historial de movimientos con filtros opcionales
+ *     parameters:
+ *       - in: query
+ *         name: inventory_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filtrar por inventario
+ *       - in: query
+ *         name: movement_type
+ *         schema:
+ *           type: string
+ *           enum: [in, out, transfer, adjustment, waste, replenishment]
+ *         description: Filtrar por tipo de movimiento
+ *       - in: query
+ *         name: flight_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filtrar por vuelo
+ *     responses:
+ *       200:
+ *         description: Lista de movimientos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     movements:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/InventoryMovement'
+ *                     count:
+ *                       type: integer
+ */
+router.get('/movements', getAllMovements);
+
+/**
+ * @swagger
+ * /api/inventories/movements:
+ *   post:
+ *     tags: [Movements]
+ *     summary: Crear movimiento de inventario
+ *     description: Registra un nuevo movimiento de inventario
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - inventory_id
+ *               - qty_change
+ *               - movement_type
+ *             properties:
+ *               item_id:
+ *                 type: string
+ *                 format: uuid
+ *               inventory_id:
+ *                 type: string
+ *                 format: uuid
+ *               performed_by:
+ *                 type: string
+ *                 format: uuid
+ *               qty_change:
+ *                 type: integer
+ *                 example: 10
+ *               movement_type:
+ *                 type: string
+ *                 enum: [in, out, transfer, adjustment, waste, replenishment]
+ *               from_inventory:
+ *                 type: string
+ *                 format: uuid
+ *               to_inventory:
+ *                 type: string
+ *                 format: uuid
+ *               flight_id:
+ *                 type: string
+ *                 format: uuid
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Movimiento creado
+ */
+router.post('/movements', createMovement);
 
 export default router;

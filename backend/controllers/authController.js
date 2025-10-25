@@ -30,9 +30,9 @@ export const register = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const { data: existingUser } = await supabase
-      .from('users')
+    // Check if user already exists (using admin client to bypass RLS)
+    const { data: existingUser } = await supabaseAdmin
+      .from('profiles')
       .select('*')
       .eq('email', email)
       .single();
@@ -51,9 +51,9 @@ export const register = async (req, res) => {
     // Assign role (default to USER)
     const userRole = roleManager.assignRole(role || ROLES.USER);
 
-    // Create user in Supabase
-    const { data: newUser, error } = await supabase
-      .from('users')
+    // Create user in Supabase profiles table (using admin client to bypass RLS)
+    const { data: newUser, error } = await supabaseAdmin
+      .from('profiles')
       .insert([
         {
           email,
@@ -116,7 +116,7 @@ export const login = async (req, res) => {
 
     // Find user
     const { data: user, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
       .eq('email', email)
       .single();
@@ -172,7 +172,7 @@ export const getProfile = async (req, res) => {
     const userId = req.user.userId;
 
     const { data: user, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id, email, name, role, created_at')
       .eq('id', userId)
       .single();

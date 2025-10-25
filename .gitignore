@@ -117,3 +117,8 @@ models/*.pth
 *.swp
 *.swo
 .eslintcache
+
+
+
+
+supabase.txt

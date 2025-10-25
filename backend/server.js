@@ -18,6 +18,9 @@ import flightRoutes from './api/routes/flightRoutes.js';
 import aircraftRoutes from './api/routes/aircraftRoutes.js';
 import trolleyRoutes from './api/routes/trolleyRoutes.js';
 import alertRoutes from './api/routes/alertRoutes.js';
+import loungeRoutes from './api/routes/loungeRoutes.js';
+import supplierRoutes from './api/routes/supplierRoutes.js';
+import purchaseOrderRoutes from './api/routes/purchaseOrderRoutes.js';
 
 // Import middleware
 import { errorHandler } from './api/middleware/errorHandler.js';
@@ -81,6 +84,9 @@ app.use('/api/flights', flightRoutes);
 app.use('/api/aircrafts', aircraftRoutes);
 app.use('/api/trolleys', trolleyRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/lounges', loungeRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
 
 // Error handling middleware
 app.use(notFound);

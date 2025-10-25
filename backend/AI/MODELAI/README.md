@@ -36,7 +36,7 @@ Add to your existing `.env` file:
 ```env
 # Gemini AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-pro
+GEMINI_MODEL=gemini 1.5
 ```
 
 Get your Gemini API key from: https://makersuite.google.com/app/apikey

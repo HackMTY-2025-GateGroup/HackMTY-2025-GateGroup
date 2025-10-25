@@ -8,7 +8,7 @@ dotenv.config();
 
 // Constants
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-pro';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
 // Validate API key
 if (!GEMINI_API_KEY) {
@@ -17,6 +17,17 @@ if (!GEMINI_API_KEY) {
 
 // Initialize Gemini API
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+
+// Initialize the generative model once
+const model = genAI ? genAI.getGenerativeModel({ 
+  model: GEMINI_MODEL,
+  generationConfig: {
+    temperature: 0.7,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: 2048,
+  },
+}) : null;
 
 // Database schema definition for AI context - Airline Inventory Management System
 const DATABASE_SCHEMA = `
@@ -323,20 +334,9 @@ const needsMoreInformation = (userQuery) => {
 export const naturalLanguageToSQL = async (userQuery, conversationHistory = []) => {
   try {
     // Verificar si genAI está disponible
-    if (!genAI) {
+    if (!genAI || !model) {
       throw new Error('IA no disponible: GEMINI_API_KEY no configurada correctamente');
     }
-
-    // Inicializar el modelo con configuración específica
-    const model = genAI.getGenerativeModel({ 
-      model: GEMINI_MODEL,
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      },
-    });
 
     const language = detectLanguage(userQuery);
     
@@ -499,7 +499,8 @@ export const processAIQuery = async (userQuery, conversationHistory = [], userFe
       userQuery, 
       sqlResult.sql, 
       queryResult.data, 
-      sqlResult.language
+      sqlResult.language,
+      model
     );
     
     // Step 6: Update reward system if feedback is provided
@@ -542,8 +543,12 @@ export const processAIQuery = async (userQuery, conversationHistory = [], userFe
 /**
  * Format the query results into a user-friendly response
  */
-const formatResponse = async (userQuery, sqlQuery, data, language = 'en') => {
+const formatResponse = async (userQuery, sqlQuery, data, language = 'en', model) => {
   try {
+    if (!model) {
+      // Fallback if model is not available
+      return JSON.stringify(data, null, 2);
+    }
     const prompt = language === 'es'
       ? `Formatea los siguientes resultados de base de datos en una respuesta amigable en español para el usuario.
 
@@ -593,5 +598,5 @@ export default {
   processAIQuery,
   validateSQL,
   detectLanguage,
-}; 
+};
 

@@ -384,6 +384,117 @@ export const deleteInventoryItem = async (req, res) => {
   }
 };
 
+/**
+ * Get all inventory movements
+ */
+export const getAllMovements = async (req, res) => {
+  try {
+    const { inventory_id, movement_type, flight_id } = req.query;
+    
+    let query = supabase
+      .from('inventory_movements')
+      .select(`
+        *,
+        inventory_items (*),
+        inventories (*),
+        profiles:performed_by (*),
+        flights (*)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (inventory_id) query = query.eq('inventory_id', inventory_id);
+    if (movement_type) query = query.eq('movement_type', movement_type);
+    if (flight_id) query = query.eq('flight_id', flight_id);
+
+    const { data: movements, error } = await query;
+
+    if (error) {
+      return res.status(STATUS_CODES.INTERNAL_ERROR).json({
+        success: false,
+        message: 'Error fetching movements',
+        error: error.message,
+      });
+    }
+
+    res.status(STATUS_CODES.SUCCESS).json({
+      success: true,
+      data: { movements, count: movements.length },
+    });
+  } catch (error) {
+    console.error('Get movements error:', error);
+    res.status(STATUS_CODES.INTERNAL_ERROR).json({
+      success: false,
+      message: MESSAGES.ERROR,
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Create inventory movement
+ */
+export const createMovement = async (req, res) => {
+  try {
+    const {
+      item_id,
+      inventory_id,
+      performed_by,
+      qty_change,
+      movement_type,
+      from_inventory,
+      to_inventory,
+      flight_id,
+      notes,
+    } = req.body;
+
+    if (!inventory_id || !qty_change || !movement_type) {
+      return res.status(STATUS_CODES.BAD_REQUEST).json({
+        success: false,
+        message: 'Inventory ID, quantity change, and movement type are required',
+      });
+    }
+
+    const { data: movement, error } = await supabase
+      .from('inventory_movements')
+      .insert([
+        {
+          item_id,
+          inventory_id,
+          performed_by,
+          qty_change,
+          movement_type,
+          from_inventory,
+          to_inventory,
+          flight_id,
+          notes,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(STATUS_CODES.INTERNAL_ERROR).json({
+        success: false,
+        message: 'Error creating movement',
+        error: error.message,
+      });
+    }
+
+    res.status(STATUS_CODES.CREATED).json({
+      success: true,
+      message: 'Movement created successfully',
+      data: { movement },
+    });
+  } catch (error) {
+    console.error('Create movement error:', error);
+    res.status(STATUS_CODES.INTERNAL_ERROR).json({
+      success: false,
+      message: MESSAGES.ERROR,
+      error: error.message,
+    });
+  }
+};
+
 export default {
   getAllInventories,
   getInventoryById,
@@ -394,4 +505,6 @@ export default {
   addInventoryItem,
   updateInventoryItem,
   deleteInventoryItem,
+  getAllMovements,
+  createMovement,
 };

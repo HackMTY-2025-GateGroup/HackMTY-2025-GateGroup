@@ -7,7 +7,7 @@ import { STATUS_CODES, MESSAGES } from '../config/constants.js';
 export const getAllUsers = async (req, res) => {
   try {
     const { data: users, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id, email, name, role, created_at')
       .order('created_at', { ascending: false });
 
@@ -41,7 +41,7 @@ export const getUserById = async (req, res) => {
     const { id } = req.params;
 
     const { data: user, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('id, email, name, role, created_at')
       .eq('id', id)
       .single();
@@ -80,7 +80,7 @@ export const updateUser = async (req, res) => {
     if (email) updates.email = email;
 
     const { data: user, error } = await supabase
-      .from('users')
+      .from('profiles')
       .update(updates)
       .eq('id', id)
       .select('id, email, name, role, created_at')
@@ -117,7 +117,7 @@ export const deleteUser = async (req, res) => {
     const { id } = req.params;
 
     const { error } = await supabase
-      .from('users')
+      .from('profiles')
       .delete()
       .eq('id', id);
 
