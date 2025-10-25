@@ -21,6 +21,8 @@ import alertRoutes from './api/routes/alertRoutes.js';
 import loungeRoutes from './api/routes/loungeRoutes.js';
 import supplierRoutes from './api/routes/supplierRoutes.js';
 import purchaseOrderRoutes from './api/routes/purchaseOrderRoutes.js';
+// CV API (integrated from Computer-Vision)
+import occupancyRoutes from './cv/routes/occupancyRoutes.js';
 
 // Import middleware
 import { errorHandler } from './api/middleware/errorHandler.js';
@@ -87,6 +89,8 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/lounges', loungeRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
+// Computer Vision endpoints
+app.use('/api/occupancy', occupancyRoutes);
 
 // Error handling middleware
 app.use(notFound);
