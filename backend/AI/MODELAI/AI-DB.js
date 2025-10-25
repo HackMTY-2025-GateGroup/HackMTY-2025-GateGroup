@@ -19,67 +19,251 @@ if (!GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
-// Database schema definition for AI context
+// Database schema definition for AI context - Airline Inventory Management System
 const DATABASE_SCHEMA = `
-Database Schema:
+Database Schema: Airline Inventory Management System
 
-Table: Ordenes2
-- IdOrden (TEXT, Primary Key): Unique order identifier
-- FechaEmision (DATE): Order issue date
-- FechaVencimiento (DATE): Order due date
-- TipoOrden (TEXT): Order type ('Compra' for purchase/supplier, 'Venta' for sale/client)
-- Organizacion (TEXT): Organization name (supplier or client)
-- MonedaOrden (TEXT): Currency (e.g., 'MXN', 'USD')
-- TipoDeCambio (NUMERIC): Exchange rate
-- Subtotal (NUMERIC): Subtotal amount
-- Descuento (NUMERIC): Discount amount
-- Total (NUMERIC): Total amount
-- Estado (TEXT): Order status
+Table: profiles (User Profiles)
+- id (UUID, Primary Key): Unique profile identifier
+- auth_id (UUID, Unique): Linked to auth.users(id)
+- name (TEXT): User's name
+- email (TEXT, Unique): User's email
+- phone (TEXT): User's phone number
+- role (TEXT): User role - CHECK (role IN ('admin','inventory_manager','aircraft_manager','flight_attendant'))
+- created_at (TIMESTAMPTZ): Creation timestamp
+- updated_at (TIMESTAMPTZ): Last update timestamp
 
-Table: Productos2
-- IdProducto (TEXT, Primary Key): Unique product identifier
-- Nombre (TEXT): Product name
-- Descripcion (TEXT): Product description
-- Precio (NUMERIC): Product price
-- UnidadDeMedida (TEXT): Unit of measurement
-- Categoria (TEXT): Product category
+Table: aircrafts (Aircraft Fleet)
+- id (UUID, Primary Key): Unique aircraft identifier
+- tail_number (TEXT, Unique): Aircraft tail number
+- model (TEXT): Aircraft model
+- capacity (INTEGER): Passenger capacity
+- notes (TEXT): Additional notes
+- created_at (TIMESTAMPTZ): Creation timestamp
 
-Table: ItemOrden2
-- IdItemOrden (SERIAL, Primary Key): Unique item identifier
-- IdOrden (TEXT, Foreign Key): References Ordenes2
-- IdProducto (TEXT, Foreign Key): References Productos2
-- Cantidad (NUMERIC): Quantity
-- PrecioUnitario (NUMERIC): Unit price
-- Total (NUMERIC): Item total
+Table: flights (Flight Information)
+- id (UUID, Primary Key): Unique flight identifier
+- aircraft_id (UUID, Foreign Key): References aircrafts(id)
+- flight_number (TEXT): Flight number
+- departure_at (TIMESTAMPTZ): Departure time
+- arrival_at (TIMESTAMPTZ): Arrival time
+- origin (TEXT): Origin airport
+- destination (TEXT): Destination airport
+- created_at (TIMESTAMPTZ): Creation timestamp
 
-Relationships:
-- Ordenes2.IdOrden → ItemOrden2.IdOrden (One to Many)
-- Productos2.IdProducto → ItemOrden2.IdProducto (One to Many)
+Table: lounges (Airport Lounges)
+- id (UUID, Primary Key): Unique lounge identifier
+- code (TEXT, Unique): Lounge code
+- name (TEXT): Lounge name
+- airport_code (TEXT): Airport code
+- latitude (DOUBLE PRECISION): Geographic latitude
+- longitude (DOUBLE PRECISION): Geographic longitude
+- capacity (INTEGER): Lounge capacity
+- created_at (TIMESTAMPTZ): Creation timestamp
+
+Table: trolleys (Service Trolleys)
+- id (UUID, Primary Key): Unique trolley identifier
+- code (TEXT): Trolley code (e.g., TROL-01)
+- flight_id (UUID, Foreign Key): References flights(id)
+- status (TEXT): Trolley status - CHECK (status IN ('ready','in-flight','returned','maintenance'))
+- last_check (TIMESTAMPTZ): Last inspection time
+- created_at (TIMESTAMPTZ): Creation timestamp
+
+Table: products (Product Catalog)
+- id (UUID, Primary Key): Unique product identifier
+- sku (TEXT, Unique): Stock Keeping Unit
+- name (TEXT, NOT NULL): Product name
+- description (TEXT): Product description
+- category (TEXT): Product category
+- perishable (BOOLEAN): Is product perishable
+- shelf_life_days (INTEGER): Shelf life in days
+- min_stock (INTEGER): Minimum stock level
+- max_stock (INTEGER): Maximum stock level
+- dimensions (JSONB): Product dimensions {width_cm, height_cm, depth_cm}
+- metadata (JSONB): Additional metadata
+- created_at (TIMESTAMPTZ): Creation timestamp
+
+Table: inventories (Inventory Locations)
+- id (UUID, Primary Key): Unique inventory identifier
+- location_type (TEXT, NOT NULL): Location type - CHECK (location_type IN ('general','trolley','flight','lounge','aircraft_storage'))
+- location_id (UUID): Reference to location (trolleys.id, flights.id, lounges.id, etc.)
+- name (TEXT): Inventory name
+- notes (TEXT): Additional notes
+- updated_at (TIMESTAMPTZ): Last update timestamp
+- created_at (TIMESTAMPTZ): Creation timestamp
+
+Table: inventory_items (Inventory Items with Batches)
+- id (UUID, Primary Key): Unique item identifier
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- product_id (UUID, Foreign Key): References products(id)
+- batch_id (TEXT): Batch identifier
+- quantity (INTEGER, NOT NULL): Current quantity
+- reserved (INTEGER): Reserved quantity
+- min_stock (INTEGER): Minimum stock level
+- max_stock (INTEGER): Maximum stock level
+- expiry_date (DATE): Expiration date
+- storage_temp_celsius (NUMERIC): Storage temperature in Celsius
+- cv_metadata (JSONB): Computer vision metadata
+- last_temp_updated_at (TIMESTAMPTZ): Last temperature update
+- created_at (TIMESTAMPTZ): Creation timestamp
+- updated_at (TIMESTAMPTZ): Last update timestamp
+
+Table: inventory_movements (Inventory Movement History)
+- id (UUID, Primary Key): Unique movement identifier
+- item_id (UUID, Foreign Key): References inventory_items(id)
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- performed_by (UUID, Foreign Key): References profiles(id)
+- qty_change (INTEGER, NOT NULL): Quantity change (positive or negative)
+- movement_type (TEXT, NOT NULL): Movement type - CHECK (movement_type IN ('in','out','transfer','adjustment','waste','replenishment'))
+- from_inventory (UUID): Source inventory for transfers
+- to_inventory (UUID): Destination inventory for transfers
+- flight_id (UUID, Foreign Key): References flights(id)
+- notes (TEXT): Movement notes
+- created_at (TIMESTAMPTZ): Movement timestamp
+
+Table: expiry_alerts (Expiration Alerts)
+- id (UUID, Primary Key): Unique alert identifier
+- item_id (UUID, Foreign Key): References inventory_items(id)
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- expiry_date (DATE, NOT NULL): Expiration date
+- level (TEXT, NOT NULL): Alert level - CHECK (level IN ('info','warning','critical'))
+- message (TEXT): Alert message
+- acknowledged (BOOLEAN): Is alert acknowledged
+- acknowledged_by (UUID, Foreign Key): References profiles(id)
+- created_at (TIMESTAMPTZ): Alert creation timestamp
+
+Table: image_analysis (Computer Vision Analysis Results)
+- id (UUID, Primary Key): Unique analysis identifier
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- trolley_id (UUID, Foreign Key): References trolleys(id)
+- image_path (TEXT): Path to analyzed image
+- analysis_result (JSONB): Analysis results {detections, occupancy, note}
+- confidence (NUMERIC): Confidence score (0-1)
+- model_version (TEXT): CV model version
+- created_at (TIMESTAMPTZ): Analysis timestamp
+
+Table: agent_logs (AI Agent Activity Logs)
+- id (UUID, Primary Key): Unique log identifier
+- agent_name (TEXT, NOT NULL): Name of AI agent
+- action (TEXT, NOT NULL): Action performed
+- input (JSONB): Input parameters
+- output (JSONB): Output results
+- status (TEXT): Status - CHECK (status IN ('ok','warning','error'))
+- related_item (UUID, Foreign Key): References inventory_items(id)
+- created_at (TIMESTAMPTZ): Log timestamp
+
+Table: kpi_history (KPI Historical Data)
+- id (UUID, Primary Key): Unique KPI record identifier
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- trolley_id (UUID, Foreign Key): References trolleys(id)
+- kpi_name (TEXT, NOT NULL): KPI name
+- kpi_value (NUMERIC): KPI value
+- context (JSONB): Additional context
+- recorded_at (TIMESTAMPTZ): Recording timestamp
+
+Table: profiles_assignments (Staff Assignments)
+- id (UUID, Primary Key): Unique assignment identifier
+- profile_id (UUID, Foreign Key): References profiles(id)
+- aircraft_id (UUID, Foreign Key): References aircrafts(id)
+- flight_id (UUID, Foreign Key): References flights(id)
+- role (TEXT): Assignment role
+- created_at (TIMESTAMPTZ): Assignment timestamp
+
+Table: agent_tasks (AI Agent Task Scheduling)
+- id (UUID, Primary Key): Unique task identifier
+- agent_name (TEXT): Name of AI agent
+- task_type (TEXT): Type of task
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- payload (JSONB): Task parameters
+- schedule_at (TIMESTAMPTZ): Scheduled execution time
+- status (TEXT): Task status (default: 'pending')
+- result_id (UUID, Foreign Key): References agent_logs(id)
+- created_at (TIMESTAMPTZ): Task creation timestamp
+
+Table: temperature_logs (Temperature Monitoring)
+- id (UUID, Primary Key): Unique log identifier
+- inventory_id (UUID, Foreign Key): References inventories(id)
+- trolley_id (UUID, Foreign Key): References trolleys(id)
+- sensor_id (TEXT): Sensor identifier
+- temp_celsius (NUMERIC): Temperature in Celsius
+- recorded_at (TIMESTAMPTZ): Recording timestamp
+
+Table: suppliers (Supplier Information)
+- id (UUID, Primary Key): Unique supplier identifier
+- name (TEXT): Supplier name
+- contact (JSONB): Contact information
+- created_at (TIMESTAMPTZ): Creation timestamp
+
+Table: purchase_orders (Purchase Orders)
+- id (UUID, Primary Key): Unique order identifier
+- supplier_id (UUID, Foreign Key): References suppliers(id)
+- created_by (UUID, Foreign Key): References profiles(id)
+- items (JSONB): Order items
+- status (TEXT): Order status (default: 'draft')
+- created_at (TIMESTAMPTZ): Order creation timestamp
+
+Key Relationships:
+- profiles.auth_id → auth.users(id)
+- flights.aircraft_id → aircrafts.id
+- trolleys.flight_id → flights.id
+- inventories.location_id → (trolleys.id | flights.id | lounges.id | aircrafts.id based on location_type)
+- inventory_items.inventory_id → inventories.id
+- inventory_items.product_id → products.id
+- inventory_movements.item_id → inventory_items.id
+- inventory_movements.inventory_id → inventories.id
+- inventory_movements.performed_by → profiles.id
+- inventory_movements.flight_id → flights.id
+- expiry_alerts.item_id → inventory_items.id
+- image_analysis.inventory_id → inventories.id
+- image_analysis.trolley_id → trolleys.id
+- profiles_assignments.profile_id → profiles.id
+- profiles_assignments.aircraft_id → aircrafts.id
+- profiles_assignments.flight_id → flights.id
+- temperature_logs.inventory_id → inventories.id
+- purchase_orders.supplier_id → suppliers.id
 `;
 
-// Examples for AI training (in English)
+// Examples for AI training (in English and Spanish)
 const SQL_EXAMPLES = `
 Examples:
 
-Q: What are the total sales for last month?
-SQL: SELECT SUM(Total) as total_sales FROM Ordenes2 WHERE TipoOrden = 'Venta' AND FechaEmision >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND FechaEmision < DATE_TRUNC('month', CURRENT_DATE)
+Q: Show all products that are about to expire in the next 7 days
+SQL: SELECT p.name, ii.batch_id, ii.quantity, ii.expiry_date, i.name as inventory_location FROM inventory_items ii JOIN products p ON ii.product_id = p.id JOIN inventories i ON ii.inventory_id = i.id WHERE ii.expiry_date <= CURRENT_DATE + INTERVAL '7 days' AND ii.expiry_date >= CURRENT_DATE ORDER BY ii.expiry_date ASC
 
-Q: List all orders from supplier "Acme Corp"
-SQL: SELECT * FROM Ordenes2 WHERE TipoOrden = 'Compra' AND Organizacion = 'Acme Corp' ORDER BY FechaEmision DESC
+Q: ¿Cuáles son los vuelos programados para hoy?
+SQL: SELECT flight_number, origin, destination, departure_at, arrival_at, a.tail_number FROM flights f LEFT JOIN aircrafts a ON f.aircraft_id = a.id WHERE DATE(departure_at) = CURRENT_DATE ORDER BY departure_at
 
-Q: Which products have been sold more than 100 units?
-SQL: SELECT p.IdProducto, p.Nombre, SUM(i.Cantidad) as total_quantity FROM Productos2 p JOIN ItemOrden2 i ON p.IdProducto = i.IdProducto JOIN Ordenes2 o ON i.IdOrden = o.IdOrden WHERE o.TipoOrden = 'Venta' GROUP BY p.IdProducto, p.Nombre HAVING SUM(i.Cantidad) > 100 ORDER BY total_quantity DESC
+Q: List all trolleys currently in flight
+SQL: SELECT t.code, t.status, f.flight_number, f.origin, f.destination FROM trolleys t LEFT JOIN flights f ON t.flight_id = f.id WHERE t.status = 'in-flight' ORDER BY t.code
 
-Q: What is the average order value by client?
-SQL: SELECT Organizacion, AVG(Total) as avg_order_value, COUNT(*) as order_count FROM Ordenes2 WHERE TipoOrden = 'Venta' GROUP BY Organizacion ORDER BY avg_order_value DESC
+Q: What products are low on stock in general inventory?
+SQL: SELECT p.name, p.sku, ii.quantity, ii.min_stock, i.name as inventory_name FROM inventory_items ii JOIN products p ON ii.product_id = p.id JOIN inventories i ON ii.inventory_id = i.id WHERE i.location_type = 'general' AND ii.quantity <= ii.min_stock ORDER BY ii.quantity ASC
 
-Q: Show pending purchase orders
-SQL: SELECT * FROM Ordenes2 WHERE TipoOrden = 'Compra' AND Estado = 'Pendiente' ORDER BY FechaVencimiento ASC
+Q: Show all inventory movements for flight "AA123" today
+SQL: SELECT im.movement_type, im.qty_change, p.name as product, im.notes, im.created_at, pr.name as performed_by FROM inventory_movements im LEFT JOIN inventory_items ii ON im.item_id = ii.id LEFT JOIN products p ON ii.product_id = p.id LEFT JOIN profiles pr ON im.performed_by = pr.id LEFT JOIN flights f ON im.flight_id = f.id WHERE f.flight_number = 'AA123' AND DATE(im.created_at) = CURRENT_DATE ORDER BY im.created_at DESC
+
+Q: ¿Qué alertas críticas de caducidad hay sin reconocer?
+SQL: SELECT ea.message, ea.expiry_date, ea.level, p.name as product, i.name as inventory FROM expiry_alerts ea JOIN inventory_items ii ON ea.item_id = ii.id JOIN products p ON ii.product_id = p.id JOIN inventories i ON ea.inventory_id = i.id WHERE ea.acknowledged = false AND ea.level = 'critical' ORDER BY ea.expiry_date ASC
+
+Q: Show temperature logs for trolley "TROL-01" in the last 24 hours
+SQL: SELECT temp_celsius, recorded_at, sensor_id FROM temperature_logs WHERE trolley_id = (SELECT id FROM trolleys WHERE code = 'TROL-01') AND recorded_at >= NOW() - INTERVAL '24 hours' ORDER BY recorded_at DESC
+
+Q: Which flight attendants are assigned to flights departing today?
+SQL: SELECT p.name, p.email, f.flight_number, f.departure_at, f.destination FROM profiles p JOIN profiles_assignments pa ON p.id = pa.profile_id JOIN flights f ON pa.flight_id = f.id WHERE p.role = 'flight_attendant' AND DATE(f.departure_at) = CURRENT_DATE ORDER BY f.departure_at
+
+Q: List all perishable products with their shelf life
+SQL: SELECT name, sku, category, shelf_life_days FROM products WHERE perishable = true ORDER BY shelf_life_days ASC
+
+Q: Show inventory occupancy by location type
+SQL: SELECT i.location_type, COUNT(DISTINCT i.id) as inventory_count, COUNT(ii.id) as total_items, SUM(ii.quantity) as total_quantity FROM inventories i LEFT JOIN inventory_items ii ON i.id = ii.inventory_id GROUP BY i.location_type ORDER BY total_quantity DESC
+
+Q: ¿Cuáles son las órdenes de compra pendientes?
+SQL: SELECT po.id, s.name as supplier, po.status, po.created_at, p.name as created_by FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id LEFT JOIN profiles p ON po.created_by = p.id WHERE po.status = 'draft' OR po.status = 'pending' ORDER BY po.created_at DESC
 `;
 
 // System prompt for the AI agent
 const SYSTEM_PROMPT = `
-You are an intelligent SQL query generator agent for a business management system. Your role is to convert natural language questions into precise SQL queries for PostgreSQL/Supabase.
+You are an intelligent SQL query generator agent for an Airline Inventory Management System. Your role is to convert natural language questions into precise SQL queries for PostgreSQL/Supabase.
 
 ${DATABASE_SCHEMA}
 
@@ -88,15 +272,24 @@ ${SQL_EXAMPLES}
 CRITICAL RULES:
 1. Generate ONLY the SQL query without explanations, backticks, or additional text.
 2. Use Supabase/PostgreSQL specific syntax.
-3. If the question mentions a supplier or provider, filter by TipoOrden = 'Compra' and use the Organizacion field.
-4. If the question mentions clients or sales, filter by TipoOrden = 'Venta' and use the Organizacion field.
-5. Use JOIN to connect related tables and get complete information.
-6. If the question cannot be converted to SQL, respond with "NO_SQL: " followed by a brief explanation.
-7. Do NOT use backticks around the SQL query.
-8. If you need more information to generate an accurate query, respond with "NEED_MORE_INFO: " followed by specific questions.
-9. Verify all column names and table names match the schema exactly.
-10. Use proper date functions for date comparisons.
-11. Always consider data integrity and avoid SQL injection risks.
+3. When querying about flights, use the flights table with aircraft_id linking to aircrafts.
+4. When querying about trolleys (service carts), use the trolleys table with status values: 'ready', 'in-flight', 'returned', 'maintenance'.
+5. When querying about inventory, remember location_type can be: 'general', 'trolley', 'flight', 'lounge', 'aircraft_storage'.
+6. For products, check the products table - use perishable flag for perishable items.
+7. For stock levels, query inventory_items table which tracks quantity, min_stock, max_stock per inventory location.
+8. For expiration alerts, use expiry_alerts table with level: 'info', 'warning', 'critical'.
+9. For inventory movements, use inventory_movements with movement_type: 'in', 'out', 'transfer', 'adjustment', 'waste', 'replenishment'.
+10. User roles in profiles: 'admin', 'inventory_manager', 'aircraft_manager', 'flight_attendant'.
+11. Use JOIN to connect related tables and get complete information.
+12. If the question cannot be converted to SQL, respond with "NO_SQL: " followed by a brief explanation.
+13. Do NOT use backticks around the SQL query.
+14. If you need more information to generate an accurate query, respond with "NEED_MORE_INFO: " followed by specific questions.
+15. Verify all column names and table names match the schema exactly.
+16. Use proper date functions for date comparisons (CURRENT_DATE, NOW(), INTERVAL).
+17. Always consider data integrity and avoid SQL injection risks.
+18. For temperature monitoring, use temperature_logs table with temp_celsius.
+19. For computer vision analysis results, use image_analysis table.
+20. For AI agent logs and KPIs, use agent_logs and kpi_history tables respectively.
 
 Language Detection: Detect the user's language (English, Spanish, etc.) and respond in the same language for any explanations or requests for more information.
 `;

@@ -1,6 +1,10 @@
 // User roles
 export const ROLES = {
   ADMIN: 'admin',
+  INVENTORY_MANAGER: 'inventory_manager',
+  AIRCRAFT_MANAGER: 'aircraft_manager',
+  FLIGHT_ATTENDANT: 'flight_attendant',
+  // Legacy roles (mantener compatibilidad)
   USER: 'user',
   MODERATOR: 'moderator',
   GUEST: 'guest',

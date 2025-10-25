@@ -4,11 +4,20 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 
+// Import Swagger
+import { swaggerUi, specs } from './docs/swagger.js';
+
 // Import routes
 import authRoutes from './api/routes/authRoutes.js';
 import userRoutes from './api/routes/userRoutes.js';
 import otpRoutes from './api/routes/otpRoutes.js';
 import aiRoutes from './AI/aiRoutes.js';
+import inventoryRoutes from './api/routes/inventoryRoutes.js';
+import productRoutes from './api/routes/productRoutes.js';
+import flightRoutes from './api/routes/flightRoutes.js';
+import aircraftRoutes from './api/routes/aircraftRoutes.js';
+import trolleyRoutes from './api/routes/trolleyRoutes.js';
+import alertRoutes from './api/routes/alertRoutes.js';
 
 // Import middleware
 import { errorHandler } from './api/middleware/errorHandler.js';
@@ -50,11 +59,28 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Swagger Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'GateGroup API Documentation',
+}));
+
+// Redirect root to API docs
+app.get('/', (req, res) => {
+  res.redirect('/api-docs');
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/otp', otpRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/inventories', inventoryRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/flights', flightRoutes);
+app.use('/api/aircrafts', aircraftRoutes);
+app.use('/api/trolleys', trolleyRoutes);
+app.use('/api/alerts', alertRoutes);
 
 // Error handling middleware
 app.use(notFound);
@@ -65,6 +91,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV}`);
   console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL}`);
+  console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
 });
 
 export default app;

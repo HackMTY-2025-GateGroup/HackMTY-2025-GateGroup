@@ -1,0 +1,487 @@
+-- ============================
+-- Supabase SQL: Inventarios Aerolinea
+-- Ejecutar en Supabase SQL Editor
+-- ============================
+
+-- 0) Extensiones necesarias
+CREATE EXTENSION IF NOT EXISTS "pgcrypto"; -- gen_random_uuid()
+
+-- ============================
+-- 1) Tablas maestras / entidades
+-- ============================
+
+-- profiles: usuarios vinculados a auth.users
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_id uuid UNIQUE, -- vinculado a auth.users(id) (almacena el uuid del usuario auth)
+  name text,
+  email text UNIQUE,
+  phone text,
+  role text NOT NULL CHECK (role IN ('admin','inventory_manager','aircraft_manager','flight_attendant')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- aircrafts
+CREATE TABLE IF NOT EXISTS public.aircrafts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tail_number text UNIQUE,
+  model text,
+  capacity integer,
+  notes text,
+  created_at timestamptz DEFAULT now()
+);
+
+-- flights
+CREATE TABLE IF NOT EXISTS public.flights (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  aircraft_id uuid REFERENCES public.aircrafts(id) ON DELETE SET NULL,
+  flight_number text,
+  departure_at timestamptz,
+  arrival_at timestamptz,
+  origin text,
+  destination text,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_flights_departure_at ON public.flights (departure_at);
+
+-- lounges (salas)
+CREATE TABLE IF NOT EXISTS public.lounges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text UNIQUE,
+  name text,
+  airport_code text,
+  latitude double precision,
+  longitude double precision,
+  capacity integer,
+  created_at timestamptz DEFAULT now()
+);
+
+-- trolleys (carritos físicos)
+CREATE TABLE IF NOT EXISTS public.trolleys (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text, -- identificador del carrito (ej: TROL-01)
+  flight_id uuid REFERENCES public.flights(id) ON DELETE SET NULL,
+  status text DEFAULT 'ready' CHECK (status IN ('ready','in-flight','returned','maintenance')),
+  last_check timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_trolleys_flight ON public.trolleys(flight_id);
+
+-- products
+CREATE TABLE IF NOT EXISTS public.products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku text UNIQUE,
+  name text NOT NULL,
+  description text,
+  category text,
+  perishable boolean DEFAULT false,
+  shelf_life_days integer,
+  min_stock integer DEFAULT 0,
+  max_stock integer DEFAULT 0,
+  dimensions jsonb, -- { "width_cm":.., "height_cm":.., "depth_cm":.. }
+  metadata jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+-- inventories: inventario lógico. location_type define si es 'general','trolley','flight','lounge'
+CREATE TABLE IF NOT EXISTS public.inventories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  location_type text NOT NULL CHECK (location_type IN ('general','trolley','flight','lounge','aircraft_storage')),
+  location_id uuid, -- semántico: si trolley -> trolleys.id, flight -> flights.id, lounge -> lounges.id
+  name text,
+  notes text,
+  updated_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inventories_location ON public.inventories(location_type, location_id);
+
+-- inventory_items: ítems dentro de un inventario (producto + lote + qty + caducidad)
+CREATE TABLE IF NOT EXISTS public.inventory_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE CASCADE,
+  product_id uuid REFERENCES public.products(id) ON DELETE SET NULL,
+  batch_id text,
+  quantity integer NOT NULL DEFAULT 0,
+  reserved integer DEFAULT 0,
+  min_stock integer DEFAULT 0,
+  max_stock integer DEFAULT 0,
+  expiry_date date,
+  storage_temp_celsius numeric(6,2),
+  cv_metadata jsonb,
+  last_temp_updated_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_expiry ON public.inventory_items(expiry_date);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_product ON public.inventory_items(product_id);
+
+-- inventory_movements: histórico de movimientos (in/out/transfer/adjustment)
+CREATE TABLE IF NOT EXISTS public.inventory_movements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id uuid REFERENCES public.inventory_items(id) ON DELETE SET NULL,
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE SET NULL,
+  performed_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  qty_change integer NOT NULL,
+  movement_type text NOT NULL CHECK (movement_type IN ('in','out','transfer','adjustment','waste','replenishment')),
+  from_inventory uuid,
+  to_inventory uuid,
+  flight_id uuid REFERENCES public.flights(id) ON DELETE SET NULL,
+  notes text,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_created ON public.inventory_movements(created_at);
+
+-- expiry_alerts: alertas por caducidad o condiciones
+CREATE TABLE IF NOT EXISTS public.expiry_alerts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id uuid REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE SET NULL,
+  expiry_date date NOT NULL,
+  level text NOT NULL CHECK (level IN ('info','warning','critical')),
+  message text,
+  acknowledged boolean DEFAULT false,
+  acknowledged_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_expiry_alerts_ack ON public.expiry_alerts (acknowledged, created_at);
+
+-- image_analysis: resultados de CV
+CREATE TABLE IF NOT EXISTS public.image_analysis (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE SET NULL,
+  trolley_id uuid REFERENCES public.trolleys(id) ON DELETE SET NULL,
+  image_path text,
+  analysis_result jsonb, -- { detections: [...], occupancy: 0.85, note: ... }
+  confidence numeric(5,4),
+  model_version text,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_image_analysis_inventory ON public.image_analysis(inventory_id);
+CREATE INDEX IF NOT EXISTS idx_image_analysis_trolley ON public.image_analysis(trolley_id);
+
+-- agent_logs: logs de agentes AI
+CREATE TABLE IF NOT EXISTS public.agent_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_name text NOT NULL,
+  action text NOT NULL,
+  input jsonb,
+  output jsonb,
+  status text CHECK (status IN ('ok','warning','error')) DEFAULT 'ok',
+  related_item uuid REFERENCES public.inventory_items(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_agent ON public.agent_logs(agent_name, created_at);
+
+-- kpi_history: KPIs historicos
+CREATE TABLE IF NOT EXISTS public.kpi_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE SET NULL,
+  trolley_id uuid REFERENCES public.trolleys(id) ON DELETE SET NULL,
+  kpi_name text NOT NULL,
+  kpi_value numeric,
+  context jsonb,
+  recorded_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_kpi_history_kpi ON public.kpi_history(kpi_name, recorded_at);
+
+-- profiles_assignments: asignaciones (profile -> flight/aircraft)
+CREATE TABLE IF NOT EXISTS public.profiles_assignments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
+  aircraft_id uuid REFERENCES public.aircrafts(id) ON DELETE SET NULL,
+  flight_id uuid REFERENCES public.flights(id) ON DELETE SET NULL,
+  role text,
+  created_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_profiles_assign_profile ON public.profiles_assignments(profile_id);
+
+-- agent_tasks: planificación de tareas por agentes AI (opcional)
+CREATE TABLE IF NOT EXISTS public.agent_tasks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_name text,
+  task_type text,
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE SET NULL,
+  payload jsonb,
+  schedule_at timestamptz,
+  status text DEFAULT 'pending',
+  result_id uuid REFERENCES public.agent_logs(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+-- temperature_logs: (opcional) telemetría por sensor
+CREATE TABLE IF NOT EXISTS public.temperature_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_id uuid REFERENCES public.inventories(id) ON DELETE SET NULL,
+  trolley_id uuid REFERENCES public.trolleys(id) ON DELETE SET NULL,
+  sensor_id text,
+  temp_celsius numeric(6,2),
+  recorded_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_temp_logs ON public.temperature_logs(recorded_at);
+
+-- purchase_orders / suppliers (recomendado, opcional)
+CREATE TABLE IF NOT EXISTS public.suppliers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text,
+  contact jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.purchase_orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  supplier_id uuid REFERENCES public.suppliers(id) ON DELETE SET NULL,
+  created_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  items jsonb,
+  status text DEFAULT 'draft',
+  created_at timestamptz DEFAULT now()
+);
+
+-- ============================
+-- 2) FUNCIONES y TRIGGERS
+-- ============================
+
+-- 2.1 Actualizar inventories.updated_at cuando cambian items
+CREATE OR REPLACE FUNCTION public.fn_update_inventory_ts()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
+    UPDATE public.inventories SET updated_at = now() WHERE id = COALESCE(NEW.inventory_id, OLD.inventory_id);
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_update_inventory_ts ON public.inventory_items;
+CREATE TRIGGER trg_update_inventory_ts
+AFTER INSERT OR UPDATE OR DELETE ON public.inventory_items
+FOR EACH ROW EXECUTE FUNCTION public.fn_update_inventory_ts();
+
+-- 2.2 Crear alertas de caducidad al insertar/actualizar inventory_items
+CREATE OR REPLACE FUNCTION public.fn_check_expiry()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  days_left integer;
+  level text;
+BEGIN
+  IF NEW.expiry_date IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  days_left := (NEW.expiry_date - CURRENT_DATE);
+
+  IF days_left < 0 THEN
+    level := 'critical';
+  ELSIF days_left <= 3 THEN
+    level := 'critical';
+  ELSIF days_left <= 7 THEN
+    level := 'warning';
+  ELSIF days_left <= 14 THEN
+    level := 'info';
+  ELSE
+    RETURN NEW;
+  END IF;
+
+  -- Insertamos alerta si no existe una pendiente similar
+  INSERT INTO public.expiry_alerts(item_id, inventory_id, expiry_date, level, message)
+  SELECT NEW.id, NEW.inventory_id, NEW.expiry_date, level,
+         concat('Expiry in ', days_left::text, ' days for product_id=', COALESCE(NEW.product_id::text,'')) 
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.expiry_alerts ea WHERE ea.item_id = NEW.id AND ea.expiry_date = NEW.expiry_date AND ea.level = level AND ea.acknowledged = false
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_expiry ON public.inventory_items;
+CREATE TRIGGER trg_check_expiry
+AFTER INSERT OR UPDATE ON public.inventory_items
+FOR EACH ROW EXECUTE FUNCTION public.fn_check_expiry();
+
+-- 2.3 Log automático cuando cambia quantity de inventory_items
+CREATE OR REPLACE FUNCTION public.fn_log_movement_on_qty_change()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  qty_diff integer;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.quantity IS DISTINCT FROM OLD.quantity THEN
+    qty_diff := NEW.quantity - COALESCE(OLD.quantity,0);
+    INSERT INTO public.inventory_movements(item_id, inventory_id, performed_by, qty_change, movement_type, notes)
+    VALUES (NEW.id, NEW.inventory_id, NULL, qty_diff, 'adjustment', 'Auto-log from qty change');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_log_movement_on_qty_change ON public.inventory_items;
+CREATE TRIGGER trg_log_movement_on_qty_change
+AFTER UPDATE ON public.inventory_items
+FOR EACH ROW EXECUTE FUNCTION public.fn_log_movement_on_qty_change();
+
+-- ============================
+-- 3) RLS (Row Level Security) POLICIES
+-- ============================
+
+-- Habilitar RLS en tablas sensibles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventory_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.inventory_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.expiry_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.image_analysis ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.kpi_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trolleys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles_assignments ENABLE ROW LEVEL SECURITY;
+
+-- 3.1 POLICIES: profiles
+-- SELECT: cada usuario ve su propio profile
+CREATE POLICY profiles_select_own ON public.profiles
+FOR SELECT USING (auth.uid() = (auth_id)::uuid);
+
+-- UPDATE: cada usuario actualiza su profile
+CREATE POLICY profiles_update_own ON public.profiles
+FOR UPDATE USING (auth.uid() = (auth_id)::uuid);
+
+-- Admin full access to profiles (policy allows admin access). We use a function-like check via EXISTS
+CREATE POLICY profiles_admin_full ON public.profiles
+FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.auth_id::uuid = auth.uid() AND p.role = 'admin'
+  )
+);
+
+-- 3.2 POLICIES: inventories (read access)
+CREATE POLICY inventories_select_managers ON public.inventories
+FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin')
+  )
+  OR
+  -- aircraft_manager sees inventories for aircraft/location they are assigned to
+  EXISTS (
+    SELECT 1 FROM public.profiles p
+    JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE p.auth_id::uuid = auth.uid() AND p.role = 'aircraft_manager' AND (
+      (public.inventories.location_type = 'aircraft_storage' AND public.inventories.location_id = pa.aircraft_id)
+      OR (public.inventories.location_type = 'flight' AND public.inventories.location_id = pa.flight_id)
+    )
+  )
+  OR
+  -- flight_attendant sees inventories for flights they are assigned to
+  EXISTS (
+    SELECT 1 FROM public.profiles p
+    JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE p.auth_id::uuid = auth.uid() AND p.role = 'flight_attendant' AND public.inventories.location_type = 'flight' AND public.inventories.location_id = pa.flight_id
+  )
+);
+
+-- INSERT/UPDATE/DELETE only for inventory_manager and admin
+CREATE POLICY inventories_manage_inventory_managers ON public.inventories
+FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+);
+
+-- 3.3 POLICIES: inventory_items (read)
+CREATE POLICY inventory_items_select ON public.inventory_items
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+  OR
+  EXISTS (
+    SELECT 1 FROM public.inventories inv
+    JOIN public.profiles p ON p.auth_id::uuid = auth.uid()
+    LEFT JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE inv.id = public.inventory_items.inventory_id AND (
+      p.role = 'inventory_manager'
+      OR (p.role = 'aircraft_manager' AND inv.location_type IN ('aircraft_storage','flight') AND inv.location_id IN (pa.aircraft_id, pa.flight_id))
+      OR (p.role = 'flight_attendant' AND inv.location_type = 'flight' AND inv.location_id = pa.flight_id)
+    )
+  )
+);
+
+-- 3.4 POLICIES: inventory_movements
+-- SELECT: managers, assigned crew see movements for their flight/trolley
+CREATE POLICY inventory_movements_select ON public.inventory_movements
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+  OR
+  EXISTS (
+    SELECT 1 FROM public.profiles p JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE p.auth_id::uuid = auth.uid() AND (
+      -- movements related to flights assigned to the user
+      (public.inventory_movements.flight_id IS NOT NULL AND public.inventory_movements.flight_id = pa.flight_id)
+      OR
+      -- movements related to inventory assigned to aircraft of the user
+      (public.inventory_movements.inventory_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.inventories inv WHERE inv.id = public.inventory_movements.inventory_id AND inv.location_id = pa.aircraft_id))
+    )
+  )
+);
+
+-- INSERT: flight attendants (for their flight), inventory_manager, admin
+CREATE POLICY inventory_movements_insert ON public.inventory_movements
+FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+  OR
+  EXISTS (
+    SELECT 1 FROM public.profiles p
+    JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE p.auth_id::uuid = auth.uid() AND p.role = 'flight_attendant' AND public.inventory_movements.flight_id = pa.flight_id
+  )
+);
+
+-- 3.5 POLICIES: expiry_alerts
+CREATE POLICY expiry_alerts_select ON public.expiry_alerts
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+  OR EXISTS (
+    SELECT 1 FROM public.profiles p JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE p.auth_id::uuid = auth.uid() AND (
+      (public.expiry_alerts.inventory_id IS NOT NULL AND public.expiry_alerts.inventory_id = pa.flight_id)
+      OR (p.role = 'aircraft_manager' AND public.expiry_alerts.inventory_id IS NOT NULL)
+    )
+  )
+);
+
+-- ACKNOWLEDGE: allow flight_attendant to ack alerts for their flight
+CREATE POLICY expiry_alerts_ack_flight_attendant ON public.expiry_alerts
+FOR UPDATE USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles p JOIN public.profiles_assignments pa ON pa.profile_id = p.id
+    WHERE p.auth_id::uuid = auth.uid() AND p.role = 'flight_attendant' AND public.expiry_alerts.inventory_id = pa.flight_id
+  )
+) WITH CHECK (acknowledged = true AND acknowledged_by = (SELECT id FROM public.profiles WHERE auth_id::uuid = auth.uid()));
+
+-- 3.6 POLICIES: image_analysis
+-- Edge functions/service role will INSERT (service key bypasses RLS). For normal users:
+CREATE POLICY image_analysis_select ON public.image_analysis
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+  OR
+  EXISTS (SELECT 1 FROM public.profiles p JOIN public.profiles_assignments pa ON pa.profile_id = p.id WHERE p.auth_id::uuid = auth.uid() AND public.image_analysis.trolley_id = pa.flight_id)
+);
+
+-- 3.7 POLICIES: agent_logs and kpi_history (readonly for managers)
+CREATE POLICY agent_logs_select ON public.agent_logs
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+);
+
+CREATE POLICY kpi_history_select ON public.kpi_history
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+);
+
+-- 3.8 POLICIES: trolleys
+CREATE POLICY trolleys_select_for_staff ON public.trolleys
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+  OR
+  EXISTS (SELECT 1 FROM public.profiles p JOIN public.profiles_assignments pa ON pa.profile_id = p.id WHERE p.auth_id::uuid = auth.uid() AND public.trolleys.flight_id = pa.flight_id)
+);
+
+CREATE POLICY trolleys_update_manage ON public.trolleys
+FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.auth_id::uuid = auth.uid() AND p.role IN ('inventory_manager','admin'))
+);
