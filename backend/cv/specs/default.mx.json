@@ -1,0 +1,52 @@
+{
+  "name": "default-mx-topdown-3columns",
+  "version": "0.1.0",
+  "notes": "Default top-down trolley layout seen in images: left snacks, middle bottles, right cans/juices. ROIs are normalized [x,y,w,h] in 0..1 relative to image size so it works for any resolution.",
+  "image": {
+    "orientation": "top-down",
+    "roi": [0, 0, 1, 1]
+  },
+  "class_alias": {
+    "can": ["can", "bottle", "cup"],
+    "bottle": ["bottle", "cup"],
+    "snack": ["snack", "cake", "donut", "sandwich", "banana", "apple"],
+    "paper": ["book", "box", "napkin", "towel"]
+  },
+  "trays": [
+    {
+      "id": "left-top",
+      "label": "Snacks (bars/cookies)",
+      "roi": [0.0, 0.0, 0.33, 0.20],
+      "capacity": 28,
+      "classes": ["snack"]
+    },
+    {
+      "id": "left-mid",
+      "label": "Snacks overflow",
+      "roi": [0.0, 0.20, 0.33, 0.40],
+      "capacity": 28,
+      "classes": ["snack"]
+    },
+    {
+      "id": "middle-top",
+      "label": "Bottles (500ml)",
+      "roi": [0.33, 0.0, 0.34, 0.25],
+      "capacity": 12,
+      "classes": ["bottle"]
+    },
+    {
+      "id": "right-top",
+      "label": "Cans (355ml)",
+      "roi": [0.67, 0.0, 0.33, 0.25],
+      "capacity": 24,
+      "classes": ["can"]
+    },
+    {
+      "id": "right-mid",
+      "label": "Juices / dairy small",
+      "roi": [0.67, 0.25, 0.33, 0.25],
+      "capacity": 12,
+      "classes": ["bottle", "can"]
+    }
+  ]
+}
