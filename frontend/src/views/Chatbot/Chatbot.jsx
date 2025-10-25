@@ -5,55 +5,114 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+// API helper that attaches token and resolves the backend path
+import { post } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+
 const Chatbot = () => {
   const [messages, setMessages] = useState([
     {
       id: 1,
       role: 'assistant',
       content:
-        'Hello! I\'m your AI assistant for waste management. How can I help you today?',
+        "Hello! How can I help you today?",
       timestamp: new Date().toISOString(),
     },
   ]);
   const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const { signOut } = useAuth();
 
-  // TODO: Replace with actual Supabase Edge Function call to AI service
-  // Example: const { mutate: sendMessage } = useMutation(sendChatMessage);
-
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || sending) return;
 
     const userMessage = {
-      id: messages.length + 1,
+      id: Date.now() + 1,
       role: 'user',
-      content: input,
+      content: input.trim(),
       timestamp: new Date().toISOString(),
     };
 
+    // Optimistically add user's message
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
+    setSending(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    // Build a simple conversationHistory to send to backend
+    // Map both user and assistant messages to preserve context
+    const conversationHistory = messages
+      .concat(userMessage)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    try {
+      // Use absolute backend route to ensure correct resolution
+      const body = await post('/api/ai/query', {
+        query: userMessage.content,
+        conversationHistory,
+        // you can add extra metadata here (e.g., user id) if backend expects it
+      });
+
+      // backend may return { data: result } or result directly
+      const result = body?.data ?? body;
+
+      let assistantText = '';
+
+      // Normalize different possible response shapes
+      if (!result) {
+        assistantText = 'No response from AI service.';
+      } else if (typeof result === 'string') {
+        assistantText = result;
+      } else if (result.action === 'query_executed') {
+        assistantText =
+          result.formatted ||
+          result.sql ||
+          (result.data ? JSON.stringify(result.data, null, 2) : 'Query executed.');
+      } else if (result.action === 'request_info' || result.action === 'general_response') {
+        assistantText = result.message || JSON.stringify(result, null, 2);
+      } else if (result.action === 'error') {
+        assistantText = result.error || 'Error processing AI request.';
+      } else {
+        // Fallback: stringify the response
+        assistantText = JSON.stringify(result, null, 2);
+      }
+
       const aiMessage = {
-        id: messages.length + 2,
+        id: Date.now() + 2,
         role: 'assistant',
-        content:
-          'I understand your question. This is a placeholder response. In production, this will connect to the AI chatbot service via Supabase Edge Functions.',
+        content: assistantText,
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
+    } catch (err) {
+      // If backend returns 401/unauthorized, sign the user out
+      if (err?.status === 401) {
+        await signOut();
+        return;
+      }
+
+      const errorMessage = err?.message || 'Failed to contact AI service';
+      const aiMessage = {
+        id: Date.now() + 3,
+        role: 'assistant',
+        content: `Error: ${errorMessage}`,
         timestamp: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, aiMessage]);
-    }, 1000);
-
-    // TODO: Implement actual AI chatbot integration
-    // sendMessage({ message: input });
+    } finally {
+      setSending(false);
+    }
   };
 
   const formatTime = (timestamp) => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    try {
+      return new Date(timestamp).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
   };
 
   return (
@@ -61,11 +120,11 @@ const Chatbot = () => {
       <div>
         <h2 className="text-3xl font-bold tracking-tight">AI Chatbot</h2>
         <p className="text-muted-foreground mt-1">
-          Get instant answers and insights about waste management
+          Get instant answers and insights about product management
         </p>
       </div>
 
-      <Card className="h-[calc(100%-5rem)] flex flex-col">
+      <Card className="h-[calc(100vh + 1rem)] flex flex-col">
         <CardHeader className="border-b">
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
@@ -94,7 +153,7 @@ const Chatbot = () => {
                         : 'bg-muted'
                     }`}
                   >
-                    <p className="text-sm">{message.content}</p>
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     <p
                       className={`text-xs mt-1 ${
                         message.role === 'user'
@@ -121,11 +180,15 @@ const Chatbot = () => {
                 placeholder="Type your message..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') handleSend();
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
                 }}
+                disabled={sending}
               />
-              <Button onClick={handleSend} size="icon">
+              <Button onClick={handleSend} size="icon" disabled={sending}>
                 <Send className="h-4 w-4" />
               </Button>
             </div>

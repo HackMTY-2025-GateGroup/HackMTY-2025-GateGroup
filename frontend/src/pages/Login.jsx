@@ -92,11 +92,14 @@ const Login = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
+            {/*
             <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
               <Plane className="h-6 w-6 text-primary" />
             </div>
+            */}
+            <img src="/logo_transparent.png" alt="OpSight Logo" className="h-12 w-15 mx-auto" />
           </div>
-          <CardTitle className="text-2xl font-bold">Airline Catering CRM</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to OpSight</CardTitle>
           <CardDescription>
             Waste Management & Optimization System
           </CardDescription>

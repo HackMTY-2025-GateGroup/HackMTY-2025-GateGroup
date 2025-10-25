@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { get, post } from '@/lib/api';
 
 const AuthContext = createContext({});
 
@@ -18,39 +19,25 @@ export const AuthProvider = ({ children }) => {
   const [userRole, setUserRole] = useState(null);
   const navigate = useNavigate();
 
-  // Backend API base (optionally set VITE_API_URL in .env)
-  const API_BASE = import.meta.env.VITE_API_URL || '';
-
+  // Load stored token/profile on mount
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      // fetch profile from backend
-      fetchProfile(token).finally(() => setLoading(false));
-    } else {
+    if (!token) {
       setLoading(false);
+      return;
     }
+    // attempts to fetch profile using stored token (lib/api attaches token)
+    (async () => {
+      setLoading(true);
+      await fetchProfile(token);
+      setLoading(false);
+    })();
   }, []);
 
   const fetchProfile = async (token) => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/profile`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) {
-        // token invalid / expired
-        localStorage.removeItem('token');
-        setUser(null);
-        setUserRole(null);
-        setSession(null);
-        return null;
-      }
-
-      const json = await res.json();
+      // Use backend profile route
+      const json = await get('auth/profile');
       const profile = json?.data?.user;
       if (profile) {
         setUser(profile);
@@ -58,6 +45,10 @@ export const AuthProvider = ({ children }) => {
         setSession({ access_token: token });
         return profile;
       } else {
+        localStorage.removeItem('token');
+        setUser(null);
+        setUserRole(null);
+        setSession(null);
         return null;
       }
     } catch (err) {
@@ -77,20 +68,9 @@ export const AuthProvider = ({ children }) => {
     await fetchProfile(token);
   };
 
-  const signIn = async (email, password) => {
+  const signIn = async (email, entrance) => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        return { data: null, error: new Error(json?.message || 'Login failed') };
-      }
-
+      const json = await post('auth/login', { email, entrance });
       const token = json?.data?.token;
       const user = json?.data?.user;
 
@@ -104,27 +84,19 @@ export const AuthProvider = ({ children }) => {
       return { data: json, error: null };
     } catch (err) {
       return { data: null, error: err };
+    } finally {
+      setLoading(false);
     }
   };
 
-  const signUp = async (email, password, name) => {
+  const signUp = async (email, entrance, name) => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        return { data: null, error: new Error(json?.message || 'Registration failed') };
-      }
-
-      // registration may return user+token depending on backend; do not auto-login by default
+      const json = await post('auth/register', { email, entrance, name });
       return { data: json, error: null };
     } catch (err) {
       return { data: null, error: err };
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -146,6 +118,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signUp,
     signOut,
+    fetchUserRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
