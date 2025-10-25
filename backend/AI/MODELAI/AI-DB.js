@@ -12,12 +12,11 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-pro';
 
 // Validate API key
 if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY is not defined in environment variables');
+  console.warn('⚠️ GEMINI_API_KEY is not defined in environment variables');
 }
 
 // Initialize Gemini API
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 // Database schema definition for AI context - Airline Inventory Management System
 const DATABASE_SCHEMA = `
@@ -323,6 +322,22 @@ const needsMoreInformation = (userQuery) => {
  */
 export const naturalLanguageToSQL = async (userQuery, conversationHistory = []) => {
   try {
+    // Verificar si genAI está disponible
+    if (!genAI) {
+      throw new Error('IA no disponible: GEMINI_API_KEY no configurada correctamente');
+    }
+
+    // Inicializar el modelo con configuración específica
+    const model = genAI.getGenerativeModel({ 
+      model: GEMINI_MODEL,
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048,
+      },
+    });
+
     const language = detectLanguage(userQuery);
     
     // Build conversation context

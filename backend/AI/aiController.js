@@ -17,6 +17,15 @@ export const queryDatabase = async (req, res) => {
       });
     }
 
+    // Verificar si la API key está configurada
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        message: 'AI service not configured. Please set GEMINI_API_KEY in environment variables.',
+        error: 'GEMINI_API_KEY not configured',
+      });
+    }
+
     const result = await processAIQuery(query, conversationHistory, feedback);
 
     res.status(STATUS_CODES.SUCCESS).json({
@@ -25,7 +34,21 @@ export const queryDatabase = async (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error('AI query processing error:', error);
+    console.error('Error processing AI query:', error);
+    
+    // Manejar específicamente errores de API key inválida
+    if (error.message.includes('API_KEY_INVALID') || 
+        error.message.includes('API key not valid') ||
+        error.message.includes('not found for API version') ||
+        error.message.includes('is not supported')) {
+      return res.status(503).json({
+        success: false,
+        message: 'Google Gemini API error. The model may not be available or the API key is invalid.',
+        error: error.message,
+        suggestion: 'Try updating GEMINI_MODEL to "gemini-pro" in your .env file and restart the server.',
+      });
+    }
+
     res.status(STATUS_CODES.INTERNAL_ERROR).json({
       success: false,
       message: 'Error processing AI query',
