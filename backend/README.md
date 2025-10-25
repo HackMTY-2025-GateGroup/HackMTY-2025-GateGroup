@@ -164,9 +164,24 @@ El servidor se ejecutará en `http://localhost:5000`
 
 ### 🤖 AI (`/api/ai`)
 
+#### Natural Language Database Queries (NEW!)
+- **POST** `/api/ai/query` - Query database using natural language
+  ```json
+  {
+    "query": "What are the total sales for last month?",
+    "conversationHistory": [],  // Optional
+    "feedback": null            // Optional: { success: true, rating: 5 }
+  }
+  ```
+
+- **GET** `/api/ai/metrics` - Get AI performance metrics and insights
+
+#### General AI Processing
 - **POST** `/api/ai/process` - Procesar con AI
 - **POST** `/api/ai/analyze` - Analizar datos
 - **POST** `/api/ai/predict` - Generar predicción
+
+**📖 Documentation:** See `AI/MODELAI/QUICKSTART.md` for the new AI query system setup.
 
 ## 🔑 Roles y Permisos
 
@@ -203,6 +218,33 @@ EMAIL_PASSWORD=tu_contraseña_de_aplicacion
 ```
 
 ## 🤖 Integración de AI
+
+### Natural Language Database Queries (Google Gemini)
+
+El sistema ahora incluye un motor de consultas AI que convierte lenguaje natural a SQL:
+
+**Setup:**
+```bash
+npm install @google/generative-ai
+```
+
+Agregar a `.env`:
+```env
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-pro
+```
+
+**Features:**
+- ✅ Consultas en español e inglés
+- ✅ Conversación contextual (agent loop)
+- ✅ Sistema de aprendizaje con recompensas
+- ✅ Validación de SQL anti-inyección
+- ✅ Métricas de rendimiento
+- ✅ Feedback del usuario
+
+**Quick Start:** Ver `AI/MODELAI/QUICKSTART.md`
+
+### Legacy AI Services
 
 El archivo `services/aiService.js` contiene funciones placeholder para integración con:
 - OpenAI

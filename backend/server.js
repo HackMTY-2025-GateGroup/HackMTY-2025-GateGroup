@@ -8,7 +8,7 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './api/routes/authRoutes.js';
 import userRoutes from './api/routes/userRoutes.js';
 import otpRoutes from './api/routes/otpRoutes.js';
-import aiRoutes from './api/routes/aiRoutes.js';
+import aiRoutes from './AI/aiRoutes.js';
 
 // Import middleware
 import { errorHandler } from './api/middleware/errorHandler.js';
