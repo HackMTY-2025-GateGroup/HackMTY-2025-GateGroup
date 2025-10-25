@@ -1,0 +1,21 @@
+# Example YOLO dataset YAML for trolley products
+# Update 'path' to your dataset root. Expected structure:
+# path/images/train, path/images/val, path/labels/train, path/labels/val
+
+path: ./dataset
+train: images/train
+val: images/val
+
+test: images/test  # optional
+
+names:
+  0: can_355ml
+  1: water_1_5l
+  2: juice_946ml
+  3: cookie_30g
+  4: coke_1_5l
+  # Optional (if etiquetas incluyesen charolas/lados)
+  # 5: tray_front
+  # 6: tray_back
+
+# Optional: class weights or metadata can be added if needed
