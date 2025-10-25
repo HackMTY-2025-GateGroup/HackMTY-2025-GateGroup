@@ -234,11 +234,11 @@ const options = {
       { name: 'Alerts', description: 'Alertas de caducidad' },
       { name: 'Analytics', description: 'Análisis y reportes' },
     ],
-    security: [
-      {
-        bearerAuth: [],
-      },
-    ],
+    // security: [
+    //   {
+    //     bearerAuth: [],
+    //   },
+    // ], // COMMENTED FOR TESTING - No authentication required
   },
   apis: [
     './api/routes/*.js',

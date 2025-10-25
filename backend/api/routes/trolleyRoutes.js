@@ -11,7 +11,7 @@ import { ROLES } from '../../config/constants.js';
 
 const router = express.Router();
 
-router.use(protect);
+// router.use(protect); // COMMENTED FOR TESTING
 
 /**
  * @swagger
@@ -91,7 +91,8 @@ router.get('/:id', getTrolleyById);
  *       201:
  *         description: Trolley creado
  */
-router.post('/', authorize(ROLES.INVENTORY_MANAGER, ROLES.AIRCRAFT_MANAGER, ROLES.ADMIN), createTrolley);
+// router.post('/', authorize(ROLES.INVENTORY_MANAGER, ROLES.AIRCRAFT_MANAGER, ROLES.ADMIN), createTrolley); // COMMENTED FOR TESTING
+router.post('/', createTrolley);
 
 /**
  * @swagger
@@ -129,7 +130,8 @@ router.post('/', authorize(ROLES.INVENTORY_MANAGER, ROLES.AIRCRAFT_MANAGER, ROLE
  *       200:
  *         description: Trolley actualizado
  */
-router.put('/:id', authorize(ROLES.INVENTORY_MANAGER, ROLES.AIRCRAFT_MANAGER, ROLES.ADMIN), updateTrolley);
+// router.put('/:id', authorize(ROLES.INVENTORY_MANAGER, ROLES.AIRCRAFT_MANAGER, ROLES.ADMIN), updateTrolley); // COMMENTED FOR TESTING
+router.put('/:id', updateTrolley);
 
 /**
  * @swagger
@@ -150,6 +152,7 @@ router.put('/:id', authorize(ROLES.INVENTORY_MANAGER, ROLES.AIRCRAFT_MANAGER, RO
  *       200:
  *         description: Trolley eliminado
  */
-router.delete('/:id', authorize(ROLES.ADMIN), deleteTrolley);
+// router.delete('/:id', authorize(ROLES.ADMIN), deleteTrolley); // COMMENTED FOR TESTING
+router.delete('/:id', deleteTrolley);
 
 export default router;
