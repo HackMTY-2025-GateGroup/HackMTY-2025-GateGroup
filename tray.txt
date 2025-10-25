@@ -1,0 +1,34 @@
+box tray size 
+
+# box size 
+largo: 37 cm 
+ancho: 26 cm 
+deepth: 10 cm 
+
+# caracteristics of real products 
+latas 355 ml caben 5 de largo 
+3.5 latas caben 3.5 ancho 
+La lata estándar de Coca Cola de 355 ml tiene una altura de aproximadamente 12.25 centímetros (4.82 pulgadas) y un diámetro de alrededor de 6.5 centímetros (2.56 pulgadas) en la parte superior, con el cuerpo principal manteniendo un diámetro similar y la base ligeramente más pequeña, alrededor de 6 centímetros (2.36 pulgadas)
+
+
+3 botellas de agua acostadas de 1.5 
+
+64 paquetes de galletas por tray en total 32 de un sabor 35 otro 
+
+
+# products 
+1. cans 355 ml 
+2. big water bottle 1.5 L 
+3. juice box 946 ml (del valle )
+4. cookie package 30 g 
+5. big cocacola 1.5 L 
+
+
+# how does the fligh customer intereact with them 
+is it individual product or shared as a fill a cup 
+1. cans 355 ml individual
+2. big water bottle 1.5 L shared
+3. juice box 946 ml (del valle ) shared
+4. cookie package 30 g individual
+5. big cocacola 1.5 L shared
+

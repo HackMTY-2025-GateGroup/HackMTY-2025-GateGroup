@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { upload } from '../middleware/upload.js';
-import { postOccupancy, postDetections, postImage, getLatest, getSpec, listAllSpecs, postEstimate } from '../controllers/occupancyController.js';
+import { postOccupancy, postDetections, postImage, getLatest, getSpec, listAllSpecs, postEstimate, postEstimateVolume, postEstimateDouble } from '../controllers/occupancyController.js';
 
 const router = Router();
 
@@ -22,5 +22,11 @@ router.get('/specs/:name', getSpec);
 
 // 6) Compute tray occupancy with a spec
 router.post('/estimate', postEstimate);
+
+// 7) Volume-based tray utilization (liters)
+router.post('/estimate-volume', postEstimateVolume);
+
+// 8) Double-sided rows (front/back)
+router.post('/estimate-doubleside', postEstimateDouble);
 
 export default router;
