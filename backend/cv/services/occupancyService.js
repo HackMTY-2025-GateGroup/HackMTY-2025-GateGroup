@@ -112,3 +112,104 @@ export async function computeTrayOccupancy({ detections = [], spec }) {
   const overallPercent = n ? Number((totalPct / n).toFixed(2)) : 0;
   return { overallPercent, trays: trayResults };
 }
+
+// Compute per-tray volume utilization (liters) if we can map class -> item volume
+// Returns { overallPercent, trays:[{ id, label, capacityLiters, usedLiters, percent, count }] }
+export async function computeTrayVolumes({ detections = [], spec }) {
+  if (!spec?.trays?.length || !detections?.length) {
+    return { overallPercent: 0, trays: [] };
+  }
+
+  const classAlias = await getClassAlias(spec);
+
+  function inRoi(det, roi, frameW, frameH) {
+    const [x, y, w, h] = det.bbox || [0, 0, 0, 0];
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const [rx, ry, rw, rh] = roi; // normalized
+    const X0 = rx * frameW;
+    const Y0 = ry * frameH;
+    const X1 = (rx + rw) * frameW;
+    const Y1 = (ry + rh) * frameH;
+    return cx >= X0 && cx <= X1 && cy >= Y0 && cy <= Y1;
+  }
+
+  const frameW = detections[0]?.frame?.w || (Dimensions?.camera?.defaultFrameAreaPx ? Math.sqrt(Dimensions.camera.defaultFrameAreaPx) : 1280);
+  const frameH = detections[0]?.frame?.h || frameW * 0.5625;
+
+  const trayResults = spec.trays.map(tray => ({
+    id: tray.id,
+    label: tray.label,
+    capacityLiters: Dimensions?.tray?.usableLiters ?? 8,
+    usedLiters: 0,
+    percent: 0,
+    count: 0,
+  }));
+
+  const liters = (cm3) => (cm3 || 0) / 1000;
+
+  for (const det of detections) {
+    const cls = String(det.class).toLowerCase();
+    // Map detected class to our catalog entry
+    const item = Dimensions.items[cls] || Dimensions.items['can'];
+    const v = item?.contentVolumeCm3 || item?.geomVolumeCm3 || 0;
+
+    for (let i = 0; i < spec.trays.length; i++) {
+      const tray = spec.trays[i];
+      const accepted = tray.classes?.some(canon => {
+        const set = classAlias.get(canon) || new Set([canon]);
+        return set.has(cls);
+      });
+      if (!accepted) continue;
+      if (inRoi(det, tray.roi, frameW, frameH)) {
+        trayResults[i].count += 1;
+        trayResults[i].usedLiters += liters(v);
+      }
+    }
+  }
+
+  let totalPct = 0;
+  let n = 0;
+  for (const t of trayResults) {
+    const capL = Math.max(0.001, Number(t.capacityLiters));
+    const pct = Math.min(100, (t.usedLiters / capL) * 100);
+    t.percent = Number(pct.toFixed(2));
+    t.usedLiters = Number(t.usedLiters.toFixed(3));
+    totalPct += t.percent;
+    n += 1;
+  }
+
+  const overallPercent = n ? Number((totalPct / n).toFixed(2)) : 0;
+  return { overallPercent, trays: trayResults };
+}
+
+// Double-sided support: a row has two trays (front/back). Spec must include { side: 'front'|'back', rowId }
+// Accept detections annotated with det.side to route to correct ROIs, or process one side at a time via param.
+export async function computeDoubleSided({ detections = [], spec, side = 'front' }) {
+  if (!spec?.trays?.length) return { overallPercent: 0, rows: [] };
+  // Filter trays for this side
+  const sideSpec = { ...spec, trays: spec.trays.filter(t => (t.side || 'front') === side) };
+  const sideResult = await computeTrayVolumes({ detections, spec: sideSpec });
+
+  // Group into rows
+  const byRow = new Map();
+  for (const t of sideSpec.trays) {
+    const row = t.rowId || t.id;
+    const idx = sideSpec.trays.indexOf(t);
+    const r = sideResult.trays[idx];
+    const cur = byRow.get(row) || { rowId: row, sides: {}, usedLiters: 0, capacityLiters: 0 };
+    cur.sides[side] = r;
+    cur.usedLiters += r.usedLiters;
+    cur.capacityLiters += r.capacityLiters;
+    byRow.set(row, cur);
+  }
+
+  const rows = Array.from(byRow.values());
+  // percent for a single side is per-tray; row percent computed when both sides submitted client-side
+  for (const r of rows) {
+    r.percent = r.capacityLiters ? Number(((r.usedLiters / r.capacityLiters) * 100).toFixed(2)) : 0;
+    r.usedLiters = Number(r.usedLiters.toFixed(3));
+  }
+  const overallPercent = rows.length ? Number((rows.reduce((a, b) => a + b.percent, 0) / rows.length).toFixed(2)) : 0;
+  return { overallPercent, rows };
+}

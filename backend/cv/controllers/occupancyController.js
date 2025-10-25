@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import path from 'node:path';
 import { supabaseAdmin } from '../../config/supabase.js';
-import { computeOccupancy, computeTrayOccupancy } from '../services/occupancyService.js';
+import { computeOccupancy, computeTrayOccupancy, computeTrayVolumes, computeDoubleSided } from '../services/occupancyService.js';
 import { loadSpec, listSpecs } from '../services/specService.js';
 import { detectOnServer } from '../services/yoloService.js';
 
@@ -196,5 +196,42 @@ export async function postEstimate(req, res) {
   // attach frame size to detections for ROI scaling when provided
   const d = detections.map(det => ({ ...det, frame }));
   const result = await computeTrayOccupancy({ detections: d, spec });
+  return res.json(result);
+}
+
+const PostEstimateVolumeSchema = z.object({
+  specName: z.string().optional(),
+  detections: z.array(BaseDet),
+  frame: z.object({ w: z.number().positive(), h: z.number().positive() }).optional(),
+});
+
+export async function postEstimateVolume(req, res) {
+  const parsed = PostEstimateVolumeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
+  const { specName = 'default.mx', detections, frame } = parsed.data;
+
+  let spec;
+  try { spec = await loadSpec(specName); } catch (e) { return res.status(404).json({ error: 'Spec not found' }); }
+
+  const d = detections.map(det => ({ ...det, frame }));
+  const result = await computeTrayVolumes({ detections: d, spec });
+  return res.json(result);
+}
+
+const PostEstimateDoubleSchema = z.object({
+  specName: z.string().default('doubleside.mx'),
+  side: z.enum(['front','back']).default('front'),
+  detections: z.array(BaseDet),
+  frame: z.object({ w: z.number().positive(), h: z.number().positive() }).optional(),
+});
+
+export async function postEstimateDouble(req, res) {
+  const parsed = PostEstimateDoubleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
+  const { specName, side, detections, frame } = parsed.data;
+  let spec;
+  try { spec = await loadSpec(specName); } catch (e) { return res.status(404).json({ error: 'Spec not found' }); }
+  const d = detections.map(det => ({ ...det, frame }));
+  const result = await computeDoubleSided({ detections: d, spec, side });
   return res.json(result);
 }

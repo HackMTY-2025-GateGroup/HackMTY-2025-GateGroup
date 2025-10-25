@@ -1,0 +1,29 @@
+{
+  "name": "double-sided-front-back",
+  "version": "0.1.0",
+  "notes": "Double-sided trolley: same row has two trays (front, back). ROIs are normalized [x,y,w,h] for each side. Adjust to your camera framing.",
+  "image": {
+    "orientation": "frontal",
+    "roi": [0, 0, 1, 1]
+  },
+  "sides": ["front", "back"],
+  "class_alias": {
+    "can": ["can", "bottle", "cup"],
+    "bottle": ["bottle", "cup"],
+    "snack": ["snack", "cake", "donut", "sandwich", "banana", "apple"],
+    "juice": ["juice", "carton"]
+  },
+  "trays": [
+    { "id": "row1-front", "rowId": "row1", "side": "front", "label": "Row 1 (front)", "roi": [0.05, 0.05, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+    { "id": "row1-back",  "rowId": "row1", "side": "back",  "label": "Row 1 (back)",  "roi": [0.53, 0.05, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+
+    { "id": "row2-front", "rowId": "row2", "side": "front", "label": "Row 2 (front)", "roi": [0.05, 0.26, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+    { "id": "row2-back",  "rowId": "row2", "side": "back",  "label": "Row 2 (back)",  "roi": [0.53, 0.26, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+
+    { "id": "row3-front", "rowId": "row3", "side": "front", "label": "Row 3 (front)", "roi": [0.05, 0.47, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+    { "id": "row3-back",  "rowId": "row3", "side": "back",  "label": "Row 3 (back)",  "roi": [0.53, 0.47, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+
+    { "id": "row4-front", "rowId": "row4", "side": "front", "label": "Row 4 (front)", "roi": [0.05, 0.68, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
+    { "id": "row4-back",  "rowId": "row4", "side": "back",  "label": "Row 4 (back)",  "roi": [0.53, 0.68, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] }
+  ]
+}
