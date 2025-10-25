@@ -1,6 +1,9 @@
-import { supabase } from '../config/supabase.js';
 import { STATUS_CODES, MESSAGES, OTP_CONFIG } from '../config/constants.js';
 import { generateOTP, sendOTPEmail } from '../services/otpService.js';
+
+// In-memory OTP store to avoid DB dependency (no 'otps' table in schema)
+// Structure: Map<email, { otp, purpose, expires_at: ISO, attempts, verified, created_at: ISO }>
+const otpStore = new Map();
 
 /**
  * Generate and send OTP
@@ -20,29 +23,16 @@ export const sendOTP = async (req, res) => {
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + OTP_CONFIG.EXPIRE_MINUTES * 60 * 1000);
 
-    // Store OTP in database
-    const { data, error } = await supabase
-      .from('otps')
-      .insert([
-        {
-          email,
-          otp,
-          purpose: purpose || 'verification',
-          expires_at: expiresAt.toISOString(),
-          attempts: 0,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error storing OTP:', error);
-      return res.status(STATUS_CODES.INTERNAL_ERROR).json({
-        success: false,
-        message: 'Error generating OTP',
-        error: error.message,
-      });
-    }
+    // Store OTP in memory
+    const record = {
+      otp,
+      purpose: purpose || 'verification',
+      expires_at: expiresAt.toISOString(),
+      attempts: 0,
+      verified: false,
+      created_at: new Date().toISOString(),
+    };
+    otpStore.set(email, record);
 
     // Send OTP via email
     try {
@@ -56,7 +46,6 @@ export const sendOTP = async (req, res) => {
       success: true,
       message: MESSAGES.OTP_SENT,
       data: {
-        otpId: data.id,
         expiresAt: expiresAt.toISOString(),
       },
     });
@@ -84,18 +73,9 @@ export const verifyOTP = async (req, res) => {
       });
     }
 
-    // Find the latest OTP for this email
-    const { data: otpRecord, error } = await supabase
-      .from('otps')
-      .select('*')
-      .eq('email', email)
-      .eq('otp', otp)
-      .eq('verified', false)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error || !otpRecord) {
+    // Retrieve OTP from memory
+    const otpRecord = otpStore.get(email);
+    if (!otpRecord || otpRecord.verified !== false || otpRecord.otp !== otp) {
       return res.status(STATUS_CODES.BAD_REQUEST).json({
         success: false,
         message: MESSAGES.OTP_INVALID,
@@ -121,19 +101,8 @@ export const verifyOTP = async (req, res) => {
       });
     }
 
-    // Mark OTP as verified
-    const { error: updateError } = await supabase
-      .from('otps')
-      .update({ verified: true, verified_at: new Date().toISOString() })
-      .eq('id', otpRecord.id);
-
-    if (updateError) {
-      return res.status(STATUS_CODES.INTERNAL_ERROR).json({
-        success: false,
-        message: 'Error verifying OTP',
-        error: updateError.message,
-      });
-    }
+    // Mark OTP as verified in memory
+    otpStore.set(email, { ...otpRecord, verified: true, verified_at: new Date().toISOString() });
 
     res.status(STATUS_CODES.SUCCESS).json({
       success: true,
@@ -163,12 +132,11 @@ export const resendOTP = async (req, res) => {
       });
     }
 
-    // Invalidate previous OTPs
-    await supabase
-      .from('otps')
-      .update({ verified: true })
-      .eq('email', email)
-      .eq('verified', false);
+    // Invalidate previous OTPs in memory
+    if (otpStore.has(email)) {
+      const old = otpStore.get(email);
+      otpStore.set(email, { ...old, verified: true });
+    }
 
     // Generate new OTP
     return sendOTP(req, res);

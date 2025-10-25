@@ -8,7 +8,7 @@ export const getAllUsers = async (req, res) => {
   try {
     const { data: users, error } = await supabase
       .from('profiles')
-      .select('id, email, entrance, name, role, created_at')
+      .select('id, email, name, role, created_at')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -42,7 +42,7 @@ export const getUserById = async (req, res) => {
 
     const { data: user, error } = await supabase
       .from('profiles')
-      .select('id, email, entrance, name, role, created_at')
+      .select('id, email, name, role, created_at')
       .eq('id', id)
       .single();
 
@@ -83,7 +83,7 @@ export const updateUser = async (req, res) => {
       .from('profiles')
       .update(updates)
       .eq('id', id)
-      .select('id, email, entrance, name, role, created_at')
+      .select('id, email, name, role, created_at')
       .single();
 
     if (error) {

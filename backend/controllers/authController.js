@@ -20,13 +20,13 @@ const generateToken = (userId, email, role) => {
  */
 export const register = async (req, res) => {
   try {
-    const { email, password, name, role } = req.body;
+    const { email, entrance, name, role } = req.body;
 
     // Validate input
-    if (!email || !password || !name) {
+    if (!email || !entrance || !name) {
       return res.status(STATUS_CODES.BAD_REQUEST).json({
         success: false,
-        message: 'Please provide email, password, and name',
+        message: 'Please provide email, entrance, and name',
       });
     }
 
@@ -44,12 +44,21 @@ export const register = async (req, res) => {
       });
     }
 
-    // Hash password
+    // Hash entrance (used as password)
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedEntrance = await bcrypt.hash(entrance, salt);
 
-    // Assign role (default to USER)
-    const userRole = roleManager.assignRole(role || ROLES.USER);
+    // Assign role, constrain to DB-allowed roles
+    const ALLOWED_DB_ROLES = new Set([
+      ROLES.ADMIN,
+      ROLES.INVENTORY_MANAGER,
+      ROLES.AIRCRAFT_MANAGER,
+      ROLES.FLIGHT_ATTENDANT,
+    ]);
+    const requestedRole = roleManager.assignRole(role);
+    const userRole = ALLOWED_DB_ROLES.has(requestedRole)
+      ? requestedRole
+      : ROLES.FLIGHT_ATTENDANT; // safe default per DB constraint
 
     // Create user in Supabase profiles table (using admin client to bypass RLS)
     const { data: newUser, error } = await supabaseAdmin
@@ -57,7 +66,7 @@ export const register = async (req, res) => {
       .insert([
         {
           email,
-          password: hashedPassword,
+          entrance: hashedEntrance,
           name,
           role: userRole,
         },
@@ -104,13 +113,13 @@ export const register = async (req, res) => {
  */
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, entrance } = req.body;
 
     // Validate input
-    if (!email || !password) {
+    if (!email || !entrance) {
       return res.status(STATUS_CODES.BAD_REQUEST).json({
         success: false,
-        message: 'Please provide email and password',
+        message: 'Please provide email and entrance',
       });
     }
 
@@ -128,8 +137,8 @@ export const login = async (req, res) => {
       });
     }
 
-    // Check password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    // Check entrance (password)
+    const isPasswordValid = await bcrypt.compare(entrance, user.entrance);
 
     if (!isPasswordValid) {
       return res.status(STATUS_CODES.UNAUTHORIZED).json({

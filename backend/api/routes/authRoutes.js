@@ -9,13 +9,13 @@ const router = express.Router();
 // Validation rules
 const registerValidation = [
   body('email').isEmail().withMessage('Please provide a valid email'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('entrance').isLength({ min: 6 }).withMessage('Entrance must be at least 6 characters'),
   body('name').notEmpty().withMessage('Name is required'),
 ];
 
 const loginValidation = [
   body('email').isEmail().withMessage('Please provide a valid email'),
-  body('password').notEmpty().withMessage('Password is required'),
+  body('entrance').notEmpty().withMessage('Entrance is required'),
 ];
 
 /**
@@ -33,18 +33,18 @@ const loginValidation = [
  *             type: object
  *             required:
  *               - email
- *               - password
+ *               - entrance
  *               - name
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *                 example: usuario@ejemplo.com
- *               password:
+ *               entrance:
  *                 type: string
  *                 format: password
  *                 minLength: 6
- *                 example: password123
+ *                 example: open-sesame
  *               name:
  *                 type: string
  *                 example: Juan Pérez
@@ -95,16 +95,16 @@ router.post('/register', registerValidation, validate, register);
  *             type: object
  *             required:
  *               - email
- *               - password
+ *               - entrance
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *                 example: usuario@ejemplo.com
- *               password:
+ *               entrance:
  *                 type: string
  *                 format: password
- *                 example: password123
+ *                 example: open-sesame
  *     responses:
  *       200:
  *         description: Login exitoso
