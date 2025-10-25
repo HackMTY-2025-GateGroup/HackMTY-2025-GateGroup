@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { upload } from '../middleware/upload.js';
-import { postOccupancy, postDetections, postImage, getLatest } from '../../../controllers/occupancyController.js';
+import { postOccupancy, postDetections, postImage, getLatest, getSpec, listAllSpecs, postEstimate } from '../../../controllers/occupancyController.js';
 
 const router = Router();
 
@@ -15,5 +15,10 @@ router.post('/image', upload.single('image'), postImage);
 
 // 4) Latest occupancy by trolley
 router.get('/latest', getLatest);
+
+// Specs + estimate
+router.get('/specs', listAllSpecs);
+router.get('/specs/:name', getSpec);
+router.post('/estimate', postEstimate);
 
 export default router;

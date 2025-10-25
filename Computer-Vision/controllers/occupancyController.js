@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import path from 'node:path';
 import { supabaseAdmin } from '../server/src/supabaseClient.js';
-import { computeOccupancy } from '../services/occupancyService.js';
+import { computeOccupancy, computeTrayOccupancy } from '../services/occupancyService.js';
+import { loadSpec, listSpecs } from '../services/specService.js';
 import { detectOnServer } from '../services/yoloService.js';
 
 const BaseDet = z.object({
@@ -161,4 +162,36 @@ export async function getLatest(req, res) {
 
   if (error) return res.status(500).json({ error: error.message });
   return res.json({ row: data });
+}
+
+export async function getSpec(req, res) {
+  try {
+    const name = req.params.name || 'default.mx';
+    const spec = await loadSpec(name);
+    return res.json({ spec });
+  } catch (e) {
+    return res.status(404).json({ error: 'Spec not found' });
+  }
+}
+
+export async function listAllSpecs(_req, res) {
+  const names = await listSpecs();
+  return res.json({ specs: names });
+}
+
+const PostEstimateSchema = z.object({
+  specName: z.string().optional(),
+  detections: z.array(BaseDet),
+  frame: z.object({ w: z.number().positive(), h: z.number().positive() }).optional(),
+});
+
+export async function postEstimate(req, res) {
+  const parsed = PostEstimateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
+  const { specName = 'default.mx', detections, frame } = parsed.data;
+  let spec;
+  try { spec = await loadSpec(specName); } catch { return res.status(404).json({ error: 'Spec not found' }); }
+  const d = detections.map(det => ({ ...det, frame }));
+  const result = await computeTrayOccupancy({ detections: d, spec });
+  return res.json(result);
 }

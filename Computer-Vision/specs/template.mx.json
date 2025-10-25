@@ -1,0 +1,15 @@
+{
+  "name": "RENAME_ME",
+  "version": "0.1.0",
+  "notes": "Template spec. ROIs are normalized [x,y,w,h] fractions (0..1) of the image size.",
+  "image": { "orientation": "top-down", "roi": [0, 0, 1, 1] },
+  "class_alias": {
+    "can": ["can", "bottle", "cup"],
+    "bottle": ["bottle", "cup"],
+    "snack": ["snack", "cake", "donut", "sandwich"],
+    "paper": ["box", "napkin", "towel"]
+  },
+  "trays": [
+    { "id": "tray-1", "label": "", "roi": [0.0, 0.0, 0.5, 0.5], "capacity": 10, "classes": ["can"] }
+  ]
+}
