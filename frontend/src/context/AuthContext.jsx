@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { get, post } from '@/lib/api';
 
 const AuthContext = createContext({});
 
@@ -19,94 +19,95 @@ export const AuthProvider = ({ children }) => {
   const [userRole, setUserRole] = useState(null);
   const navigate = useNavigate();
 
+  // Load stored token/profile on mount
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Fetch user role after authentication
-          setTimeout(async () => {
-            await fetchUserRole(session.user.id);
-          }, 0);
-        } else {
-          setUserRole(null);
-        }
-        
-        setLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        fetchUserRole(session.user.id);
-      }
+    const token = localStorage.getItem('token');
+    if (!token) {
       setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+      return;
+    }
+    // attempts to fetch profile using stored token (lib/api attaches token)
+    (async () => {
+      setLoading(true);
+      await fetchProfile(token);
+      setLoading(false);
+    })();
   }, []);
 
-  const fetchUserRole = async (userId) => {
+  const fetchProfile = async (token) => {
     try {
-      // TODO: Fetch user role from database
-      // Placeholder: Default to 'admin' for development
-      // In production, this should query the user_roles table
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
-
-      if (error) {
-        console.log('Role fetch error (using default):', error.message);
-        // Default role for development
-        setUserRole('admin');
+      // Use backend profile route
+      const json = await get('auth/profile');
+      const profile = json?.data?.user;
+      if (profile) {
+        setUser(profile);
+        setUserRole(profile.role);
+        setSession({ access_token: token });
+        return profile;
       } else {
-        setUserRole(data?.role || 'flight_attendant');
+        localStorage.removeItem('token');
+        setUser(null);
+        setUserRole(null);
+        setSession(null);
+        return null;
       }
     } catch (err) {
-      console.error('Error fetching user role:', err);
-      setUserRole('flight_attendant');
+      console.error('fetchProfile error:', err);
+      localStorage.removeItem('token');
+      setUser(null);
+      setUserRole(null);
+      setSession(null);
+      return null;
     }
   };
 
-  const signIn = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { data, error };
+  const fetchUserRole = async (userId) => {
+    // keep for backward compatibility - attempt profile fetch if token exists
+    const token = localStorage.getItem('token');
+    if (!token) return setUserRole(null);
+    await fetchProfile(token);
   };
 
-  const signUp = async (email, password) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-      },
-    });
-    return { data, error };
+  const signIn = async (email, entrance) => {
+    try {
+      const json = await post('auth/login', { email, entrance });
+      const token = json?.data?.token;
+      const user = json?.data?.user;
+
+      if (token) {
+        localStorage.setItem('token', token);
+        setUser(user);
+        setUserRole(user?.role || null);
+        setSession({ access_token: token });
+      }
+
+      return { data: json, error: null };
+    } catch (err) {
+      return { data: null, error: err };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signUp = async (email, entrance, name) => {
+    try {
+      const json = await post('auth/register', { email, entrance, name });
+      return { data: json, error: null };
+    } catch (err) {
+      return { data: null, error: err };
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (!error) {
-      setUser(null);
-      setSession(null);
-      setUserRole(null);
-      navigate('/login');
-    }
-    return { error };
+    // Clear local client state and token
+    localStorage.removeItem('token');
+    setUser(null);
+    setSession(null);
+    setUserRole(null);
+    navigate('/login');
+    return { error: null };
   };
 
   const value = {
@@ -117,6 +118,7 @@ export const AuthProvider = ({ children }) => {
     signIn,
     signUp,
     signOut,
+    fetchUserRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

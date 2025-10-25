@@ -4,6 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useQuery } from '@tanstack/react-query';
+import { fetchUsers } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,43 +23,20 @@ import {
 } from '@/components/ui/table';
 
 const UserAdmin = () => {
-  // TODO: Replace with actual Supabase data fetch
-  // Example: const { data: users } = useQuery(['users'], fetchUsers);
+  const { signOut } = useAuth();
 
-  const users = [
-    {
-      id: 1,
-      email: 'sarah.johnson@airline.com',
-      role: 'admin',
-      status: 'active',
-      lastLogin: '2024-01-20 14:30',
-      createdAt: '2023-12-01',
+  const { data: usersResp, error, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['users'],
+    queryFn: fetchUsers,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+    onError: (err) => {
+      if (err?.status === 401) signOut();
     },
-    {
-      id: 2,
-      email: 'mike.chen@airline.com',
-      role: 'inventory_manager',
-      status: 'active',
-      lastLogin: '2024-01-20 13:15',
-      createdAt: '2024-01-05',
-    },
-    {
-      id: 3,
-      email: 'emma.davis@airline.com',
-      role: 'flight_attendant',
-      status: 'active',
-      lastLogin: '2024-01-20 10:45',
-      createdAt: '2024-01-10',
-    },
-    {
-      id: 4,
-      email: 'alex.martinez@airline.com',
-      role: 'flight_attendant',
-      status: 'inactive',
-      lastLogin: '2024-01-15 09:20',
-      createdAt: '2024-01-08',
-    },
-  ];
+  });
+
+  const users = Array.isArray(usersResp?.data?.users) ? usersResp.data.users : /*fallback*/ [];
 
   const getRoleBadge = (role) => {
     switch (role) {

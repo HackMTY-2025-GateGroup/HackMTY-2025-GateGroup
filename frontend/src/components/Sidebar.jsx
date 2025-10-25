@@ -23,7 +23,7 @@ const Sidebar = () => {
     {
       title: 'Dashboard',
       icon: LayoutDashboard,
-      path: '/',
+      path: '/.',
       roles: ['flight_attendant', 'inventory_manager', 'admin'],
     },
     {

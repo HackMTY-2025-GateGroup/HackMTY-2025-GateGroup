@@ -30,7 +30,7 @@ const Profile = () => {
         </div>
       </div>
 
-      <Card className="max-w-2xl">
+      <Card className="flex max-w-2xl justify-center mx-auto flex-col">
         <CardHeader className="flex items-center gap-4">
           <Avatar>
             {user?.user_metadata?.avatar ? (
@@ -39,7 +39,7 @@ const Profile = () => {
               <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
             )}
           </Avatar>
-          <div>
+          <div className="flex text-center flex-col">
             <CardTitle className="text-lg">{displayName}</CardTitle>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
           </div>
