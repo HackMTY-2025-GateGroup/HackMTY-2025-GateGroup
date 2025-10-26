@@ -1,21 +1,46 @@
-# Example YOLO dataset YAML for trolley products
-# Update 'path' to your dataset root. Expected structure:
-# path/images/train, path/images/val, path/labels/train, path/labels/val
+# YOLO dataset configuration for trolley/tray product detection
+# Updated to include all product types: beverages, snacks, and cookies
+# Dataset structure:
+# path/images/train, path/images/val
+# path/labels/train, path/labels/val (YOLO txt format: class x_center y_center width height)
 
 path: ./dataset
 train: images/train
 val: images/val
 
-test: images/test  # optional
+# Test set (optional)
+test: images/test
 
+# Class names and IDs
+# Match these with your training labels
 names:
-  0: can_355ml
-  1: water_1_5l
-  2: juice_946ml
-  3: cookie_30g
-  4: coke_1_5l
-  # Optional (if etiquetas incluyesen charolas/lados)
-  # 5: tray_front
-  # 6: tray_back
+  0: can_355ml          # Beer/soda cans - 355ml
+  1: water_1_5l         # Water bottles - 1.5L
+  2: juice_946ml        # Juice cartons/cups - 946ml
+  3: cookie_30g         # Cookies/snacks - 30g packets
+  4: coke_1_5l          # Coke bottles - 1.5L (or other branded bottles)
+  # Additional optional classes for better accuracy
+  # 5: tray_front       # Tray container (front view)
+  # 6: tray_back        # Tray container (back view)
+  # 7: bottle_small     # Small bottles (<500ml)
+  # 8: flowpack_snack   # Flow-packed snacks
+  # 9: cup_disposable   # Disposable cups
 
-# Optional: class weights or metadata can be added if needed
+# Model training parameters (optional, can override in train_yolo.py)
+# These are suggestions; the training script takes command-line args
+
+# Data augmentation settings
+mosaic: 1.0
+mixup: 0.1
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 0.0
+translate: 0.1
+scale: 0.5
+shear: 0.0
+flipud: 0.0
+fliplr: 0.5
+
+# Class weights (optional): emphasize harder-to-detect classes
+# weights: [1.0, 1.0, 1.0, 2.0, 1.0]  # Higher weight for cookies (class 3)

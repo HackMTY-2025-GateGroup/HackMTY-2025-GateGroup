@@ -12,6 +12,7 @@ import authRoutes from './api/routes/authRoutes.js';
 import userRoutes from './api/routes/userRoutes.js';
 import otpRoutes from './api/routes/otpRoutes.js';
 import aiRoutes from './AI/aiRoutes.js';
+import agentRoutes from './AI/agentRoutes.js';
 import inventoryRoutes from './api/routes/inventoryRoutes.js';
 import productRoutes from './api/routes/productRoutes.js';
 import flightRoutes from './api/routes/flightRoutes.js';
@@ -80,6 +81,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/otp', otpRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/ai', agentRoutes);
 app.use('/api/inventories', inventoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/flights', flightRoutes);
@@ -91,6 +93,9 @@ app.use('/api/suppliers', supplierRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 // Computer Vision endpoints
 app.use('/api/occupancy', occupancyRoutes);
+
+// Serve analysis output images
+app.use('/analysis', express.static('analysis_output'));
 
 // Error handling middleware
 app.use(notFound);

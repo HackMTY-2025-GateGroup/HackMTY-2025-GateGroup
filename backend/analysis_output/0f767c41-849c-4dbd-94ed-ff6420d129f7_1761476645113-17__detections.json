@@ -1,0 +1,136 @@
+{
+  "analysisId": "0f767c41-849c-4dbd-94ed-ff6420d129f7",
+  "timestamp": "2025-10-26T11-04-09-742Z",
+  "detections": [
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        0,
+        320,
+        600,
+        720
+      ],
+      "frame": {
+        "w": 1200,
+        "h": 1600
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_0_left",
+      "fill_percentage": 100,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    },
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        600,
+        320,
+        600,
+        720
+      ],
+      "frame": {
+        "w": 1200,
+        "h": 1600
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_0_right",
+      "fill_percentage": 100,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    },
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        0,
+        720,
+        600,
+        1120
+      ],
+      "frame": {
+        "w": 1200,
+        "h": 1600
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_1_left",
+      "fill_percentage": 75,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    },
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        600,
+        720,
+        600,
+        1120
+      ],
+      "frame": {
+        "w": 1200,
+        "h": 1600
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_1_right",
+      "fill_percentage": 75,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    },
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        0,
+        1120,
+        600,
+        1520
+      ],
+      "frame": {
+        "w": 1200,
+        "h": 1600
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_2_left",
+      "fill_percentage": 50,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    },
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        600,
+        1120,
+        600,
+        1520
+      ],
+      "frame": {
+        "w": 1200,
+        "h": 1600
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_2_right",
+      "fill_percentage": 50,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    }
+  ],
+  "frame": {
+    "w": 1200,
+    "h": 1600
+  }
+}

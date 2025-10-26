@@ -61,9 +61,23 @@ export const Dimensions = {
       geomVolumeCm3: 33 * 9 * 9,
     },
 
+    'bottle_water': {
+      label: 'Water Bottle 1.5 L',
+      l: 33, w: 9, h: 9,
+      contentVolumeCm3: 1500,
+      geomVolumeCm3: 33 * 9 * 9,
+    },
+
     // 3) Juice box 946 ml (Del Valle)
     'juice_946ml': {
       label: 'Juice 946 ml',
+      w: 7.5, h: 20, d: 7.5,
+      contentVolumeCm3: 946,
+      geomVolumeCm3: 7.5 * 20 * 7.5,
+    },
+
+    'juice_box': {
+      label: 'Juice Box 946 ml',
       w: 7.5, h: 20, d: 7.5,
       contentVolumeCm3: 946,
       geomVolumeCm3: 7.5 * 20 * 7.5,
@@ -74,6 +88,14 @@ export const Dimensions = {
       label: 'Cookie 30 g',
       w: 12, h: 3, d: 8,
       // food mass doesn't map to volume; keep geom box
+      contentVolumeCm3: 0,
+      geomVolumeCm3: 12 * 3 * 8,
+      typicalPerTray: 64,
+    },
+
+    'cookie': {
+      label: 'Cookie 30 g',
+      w: 12, h: 3, d: 8,
       contentVolumeCm3: 0,
       geomVolumeCm3: 12 * 3 * 8,
       typicalPerTray: 64,

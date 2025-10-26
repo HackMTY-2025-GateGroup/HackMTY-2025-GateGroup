@@ -17,6 +17,17 @@ export const queryDatabase = async (req, res) => {
       });
     }
 
+    // Lightweight small-talk handler (non-intrusive)
+    const qLower = String(query).trim().toLowerCase();
+    const isGreeting = /^(hi|hello|hey|hola|buenas|good\s*morn|good\s*afternoon|good\s*evening)\b/.test(qLower);
+    const asksFunction = /(what\s*(can|do)\s*you\s*do|how\s*do\s*you\s*help|cual\s*es\s*tu\s*función|para\s*qué\s*sirves)/i.test(query);
+    if (isGreeting || asksFunction) {
+      const reply = asksFunction
+        ? 'Hi! I can understand natural language questions about your airline inventory and generate safe SQL to fetch data. I can also draft actions like purchase orders and ask for your confirmation before executing.'
+        : 'Hello! How can I help you with inventory, flights, trolleys, or orders?';
+      return res.status(STATUS_CODES.SUCCESS).json({ success: true, message: reply, data: { action: 'small_talk' } });
+    }
+
     // Verificar si la API key está configurada
     if (!process.env.GEMINI_API_KEY) {
       return res.status(503).json({

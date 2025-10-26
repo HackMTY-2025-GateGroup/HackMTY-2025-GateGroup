@@ -1,0 +1,6 @@
+path: C:\Users\axeli\HackMTY-2025-GateGroup\backend\cv\train\dataset
+train: images/train_cookie_aug
+val: images/val_cookie_aug
+
+nc: 2
+names: ['bottle', 'cookie']

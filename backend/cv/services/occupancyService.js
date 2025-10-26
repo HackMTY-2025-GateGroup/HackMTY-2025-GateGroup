@@ -4,7 +4,11 @@ import { Dimensions } from '../util/Dimensions.js';
 import { getClassAlias } from './specService.js';
 
 const DEFAULT_RELEVANT_CLASSES = new Set([
-  'bottle','cup','can','snack','bowl','wine glass','banana','apple','sandwich','orange','broccoli','carrot','cake','donut'
+  'bottle', 'bottle_water', 'water', 'water_bottle',
+  'cup', 'can', 'cans',
+  'juice', 'juice_box',
+  'snack', 'cookie', 'cake', 'donut', 'sandwich', 'banana', 'apple',
+  'orange', 'broccoli', 'carrot', 'bowl', 'wine glass'
 ]);
 
 export function computeOccupancy({

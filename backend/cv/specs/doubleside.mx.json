@@ -8,10 +8,10 @@
   },
   "sides": ["front", "back"],
   "class_alias": {
-    "can": ["can", "bottle", "cup"],
-    "bottle": ["bottle", "cup"],
-    "snack": ["snack", "cake", "donut", "sandwich", "banana", "apple"],
-    "juice": ["juice", "carton"]
+    "can": ["can", "cans", "cup"],
+    "bottle": ["bottle", "bottle_water", "water_bottle", "water", "coke", "cola", "cup"],
+    "snack": ["snack", "cake", "donut", "sandwich", "banana", "apple", "cookie", "galleta"],
+    "juice": ["juice", "carton", "juice_box", "cup"]
   },
   "trays": [
     { "id": "row1-front", "rowId": "row1", "side": "front", "label": "Row 1 (front)", "roi": [0.05, 0.05, 0.42, 0.18], "capacity": 15, "classes": ["can", "bottle", "juice", "snack"] },
