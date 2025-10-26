@@ -2,53 +2,88 @@ import { AlertCircle, AlertTriangle, Info, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { fetchAlerts, fetchInventoryMovements } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 const CRMAlerts = () => {
-  // TODO: Replace with actual Supabase data fetch
-  // Example: const { data: alerts } = useQuery(['alerts'], fetchAlerts);
+  const { signOut } = useAuth();
+  const { toast } = useToast();
 
-  const alerts = [
-    {
-      id: 1,
-      type: 'critical',
-      title: 'High Waste Detected - Flight UA205',
-      description: 'Unusual waste levels detected on this route. Immediate review recommended.',
-      timestamp: '10 minutes ago',
-      status: 'active',
+  // Expiry alerts (severity in `level`)
+  const {
+    data: alertsResp,
+    error: alertsError,
+    isLoading: alertsLoading,
+    isFetching: alertsFetching,
+    refetch: refetchAlerts,
+  } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: () => fetchAlerts(),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+    onError: (err) => {
+      if (err?.status === 401) signOut();
+      else console.error('Error fetching alerts', err);
     },
-    {
-      id: 2,
-      type: 'warning',
-      title: 'Cart Loading Inefficiency',
-      description: 'Loading efficiency below threshold for morning shift.',
-      timestamp: '1 hour ago',
-      status: 'active',
+  });
+
+  // Inventory movements (informational)
+  const {
+    data: movementsResp,
+    error: movementsError,
+    isLoading: movementsLoading,
+    isFetching: movementsFetching,
+    refetch: refetchMovements,
+  } = useQuery({
+    queryKey: ['inventoryMovements'],
+    queryFn: () => fetchInventoryMovements(), // example param
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+    onError: (err) => {
+      if (err?.status === 401) signOut();
+      else console.error('Error fetching movements', err);
     },
-    {
-      id: 3,
+  });
+
+  // Normalize backend shapes:
+  // alertsResp may be { data: { alerts, count } } or { alerts }
+  const expiryAlerts = Array.isArray(alertsResp?.data?.alerts)
+    ? alertsResp.data.alerts
+    : Array.isArray(alertsResp?.alerts)
+    ? alertsResp.alerts
+    : [];
+
+  // movementsResp may be { data: { movements, count } } or { movements }
+  const movements = Array.isArray(movementsResp?.data?.movements)
+    ? movementsResp.data.movements
+    : Array.isArray(movementsResp?.movements)
+    ? movementsResp.movements
+    : [];
+
+  // Merge into a single list for the UI (expiry alerts first)
+  const combined = [
+    ...expiryAlerts.map(a => ({ ...a, source: 'expiry' })),
+    ...movements.map(m => ({
+      id: m.id || `mv-${m.item_id || Date.now()}`,
       type: 'info',
-      title: 'New Analysis Available',
-      description: 'Computer vision analysis completed for 15 new photos.',
-      timestamp: '2 hours ago',
+      title: `${m.movement_type?.toUpperCase() || 'Movement'} - ${m.item_name || m.product?.name || 'Item'}`,
+      description: m.notes || `${m.qty_change || 0} units`,
+      timestamp: m?.created_at || m?.createdAt || m?.created,
       status: 'active',
-    },
-    {
-      id: 4,
-      type: 'critical',
-      title: 'Inventory Shortage Alert',
-      description: 'Low stock levels detected for beverage items.',
-      timestamp: '3 hours ago',
-      status: 'active',
-    },
-    {
-      id: 5,
-      type: 'resolved',
-      title: 'Maintenance Completed',
-      description: 'Cart #47 maintenance has been completed successfully.',
-      timestamp: '5 hours ago',
-      status: 'resolved',
-    },
+      source: 'movement',
+      severity: 'info',
+      raw: m,
+    })),
   ];
+
+  const totalCount = combined.length;
+  const criticalCount = expiryAlerts.filter(a => (a.level || a.severity) === 'critical').length;
+  const warningCount = expiryAlerts.filter(a => (a.level || a.severity) === 'warning').length;
+  const infoCount = combined.filter(c => c.source === 'movement' || (c.level || c.severity) === 'info').length;
 
   const getAlertIcon = (type) => {
     switch (type) {
@@ -89,7 +124,10 @@ const CRMAlerts = () => {
             Real-time notifications and system alerts
           </p>
         </div>
-        <Button>Mark All as Read</Button>
+        <div className="flex gap-2">
+          <Button onClick={() => { refetchAlerts(); refetchMovements(); }}>Refresh</Button>
+          {/*<Button>Mark All as Read</Button>*/}
+        </div>
       </div>
 
       {/* Alert Summary */}
@@ -99,7 +137,7 @@ const CRMAlerts = () => {
             <CardTitle className="text-sm font-medium">Total Alerts</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">7</div>
+            <div className="text-2xl font-bold">{totalCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -107,7 +145,7 @@ const CRMAlerts = () => {
             <CardTitle className="text-sm font-medium">Critical</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">2</div>
+            <div className="text-2xl font-bold text-destructive">{criticalCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -115,7 +153,7 @@ const CRMAlerts = () => {
             <CardTitle className="text-sm font-medium">Warnings</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-500">1</div>
+            <div className="text-2xl font-bold text-yellow-500">{warningCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -123,7 +161,7 @@ const CRMAlerts = () => {
             <CardTitle className="text-sm font-medium">Info</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-500">1</div>
+            <div className="text-2xl font-bold text-blue-500">{infoCount}</div>
           </CardContent>
         </Card>
       </div>
@@ -135,29 +173,30 @@ const CRMAlerts = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {alerts.map((alert) => (
+            {combined.map((alert) => (
               <div
                 key={alert.id}
                 className="flex items-start gap-4 p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors"
               >
-                <div className="mt-1">{getAlertIcon(alert.type)}</div>
+                <div className="mt-1">{getAlertIcon(alert.level || alert.type || (alert.source === 'movement' ? 'info' : 'info'))}</div>
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{alert.title}</h3>
-                    {getAlertBadge(alert.type)}
+                    <h3 className="font-semibold">{alert.title || alert.message || alert.raw?.message}</h3>
+                    {getAlertBadge(alert.level || alert.severity || (alert.source === 'movement' ? 'info' : 'info'))}
                   </div>
+                  {/*<p className="text-sm text-muted-foreground">
+                    {alert.description || alert.message || (alert.raw && JSON.stringify(alert.raw))}
+                  </p>*/}
                   <p className="text-sm text-muted-foreground">
-                    {alert.description}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
                     {alert.timestamp}
                   </p>
                 </div>
-                <Button variant="outline" size="sm">
+                {/*<Button variant="outline" size="sm">
                   View Details
-                </Button>
+                </Button>*/}
               </div>
             ))}
+            {combined.length === 0 && <div className="text-muted-foreground p-4">No alerts found.</div>}
           </div>
         </CardContent>
       </Card>

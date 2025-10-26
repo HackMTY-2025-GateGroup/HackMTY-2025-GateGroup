@@ -88,6 +88,18 @@ export const fetchUsers = async () => {
   return get('users');
 };
 
+export const fetchAlerts = async (query = {}) => {
+  // allow optional query params, e.g. { level: 'critical' }
+  const qs = Object.keys(query).length ? `?${new URLSearchParams(query).toString()}` : '';
+  return get(`alerts${qs}`);
+};
+
+export const fetchInventoryMovements = async (query = {}) => {
+  const qs = Object.keys(query).length ? `?${new URLSearchParams(query).toString()}` : '';
+  // resolvePath will turn 'inventories/movements' into `${API_BASE}/api/inventories/movements`
+  return get(`inventories/movements${qs}`);
+};
+
 export default {
   fetchJson,
   get,
@@ -95,5 +107,7 @@ export default {
   put,
   del,
   fetchUsers,
+  fetchAlerts,
+  fetchInventoryMovements,
   uploadMultipart
 };
