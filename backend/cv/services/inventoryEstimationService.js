@@ -236,7 +236,7 @@ export async function saveInventoryEstimation({
     console.warn('Inventory creation/find failed (continuing):', e);
   }
 
-  // Save the image analysis
+  // Build analysis payload
   const analysisPayload = {
     trolley_id: trolleyId,
     inventory_id: inventoryId,
@@ -249,15 +249,50 @@ export async function saveInventoryEstimation({
     model_version: 'yolo-server-v1',
   };
 
-  const { data: analysisRow, error: analysisError } = await supabaseAdmin
-    .from('image_analysis')
-    .insert(analysisPayload)
-    .select('*')
-    .maybeSingle();
+  // Check if there's an existing analysis for this trolley
+  let analysisRow = null;
+  try {
+    const { data: existingAnalysis, error: findError } = await supabaseAdmin
+      .from('image_analysis')
+      .select('id')
+      .eq('trolley_id', trolleyId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (analysisError) {
-    console.error('Error saving analysis:', analysisError);
-    throw analysisError;
+    if (!findError && existingAnalysis) {
+      // Update existing record
+      console.log('[saveInventoryEstimation] Updating existing analysis:', existingAnalysis.id);
+      const { data: updatedRow, error: updateError } = await supabaseAdmin
+        .from('image_analysis')
+        .update(analysisPayload)
+        .eq('id', existingAnalysis.id)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError) {
+        console.error('Error updating analysis:', updateError);
+        throw updateError;
+      }
+      analysisRow = updatedRow;
+    } else {
+      // Insert new record
+      console.log('[saveInventoryEstimation] Creating new analysis');
+      const { data: insertedRow, error: insertError } = await supabaseAdmin
+        .from('image_analysis')
+        .insert(analysisPayload)
+        .select('*')
+        .maybeSingle();
+
+      if (insertError) {
+        console.error('Error saving analysis:', insertError);
+        throw insertError;
+      }
+      analysisRow = insertedRow;
+    }
+  } catch (e) {
+    console.error('[saveInventoryEstimation] Error in transaction:', e);
+    throw e;
   }
 
   return {

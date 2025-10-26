@@ -94,6 +94,9 @@ app.use('/api/purchase-orders', purchaseOrderRoutes);
 // Computer Vision endpoints
 app.use('/api/occupancy', occupancyRoutes);
 
+// Serve analysis output images
+app.use('/analysis', express.static('analysis_output'));
+
 // Error handling middleware
 app.use(notFound);
 app.use(errorHandler);

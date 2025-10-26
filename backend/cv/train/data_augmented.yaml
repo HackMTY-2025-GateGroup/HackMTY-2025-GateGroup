@@ -1,0 +1,7 @@
+path: ./dataset
+train: images/train_aug
+val: images/val_aug
+
+names:
+  0: bottle
+  1: cookie

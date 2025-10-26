@@ -1,0 +1,66 @@
+{
+  "ok": true,
+  "analysisId": "1bb4c6e2-0818-4be2-8990-0eb82168d913",
+  "trolleyId": "4222e9e9-9f84-4ae7-b411-12883ee8f3f7",
+  "trolleyCode": "TEST-FULL-001",
+  "result": {
+    "trolleyCode": "TEST-FULL-001",
+    "trolleyId": "4222e9e9-9f84-4ae7-b411-12883ee8f3f7",
+    "timestamp": "2025-10-26T05:39:52.339Z",
+    "occupancy": {
+      "front": {
+        "overallPercent": 0,
+        "visualScore": 0,
+        "visualCategory": "empty",
+        "fillPercent": 0,
+        "snackPercent": 0
+      },
+      "back": {
+        "overallPercent": 0,
+        "visualScore": 0,
+        "visualCategory": "empty",
+        "fillPercent": 0,
+        "snackPercent": 0
+      },
+      "overall": {
+        "percent": 0,
+        "visualScore": 0,
+        "volumeUsedLiters": 0,
+        "volumeAvailableLiters": 65.416,
+        "totalCapacityLiters": 65.416
+      }
+    },
+    "inventory": {
+      "front": {
+        "currentProducts": [],
+        "count": 0
+      },
+      "back": {
+        "currentProducts": [],
+        "count": 0
+      }
+    },
+    "shoppingList": [
+      {
+        "productType": "can_355ml",
+        "label": "Can 355 ml",
+        "quantity": 15,
+        "volumeLiters": 5.325,
+        "priority": "high",
+        "notes": "Suggested to fill empty tray"
+      },
+      {
+        "productType": "can_355ml",
+        "label": "Can 355 ml",
+        "quantity": 15,
+        "volumeLiters": 5.325,
+        "priority": "high",
+        "notes": "Suggested to fill empty tray"
+      }
+    ],
+    "recommendations": {
+      "status": "needs_refill",
+      "message": "Tray is only 0.0% full. Recommend adding products."
+    }
+  }
+}
