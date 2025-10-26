@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../../config/supabase.js';
 import { computeOccupancy, computeTrayOccupancy, computeTrayVolumes, computeDoubleSided } from '../services/occupancyService.js';
 import { loadSpec, listSpecs } from '../services/specService.js';
 import { detectOnServer } from '../services/yoloService.js';
+import { calculateMissingProducts, saveInventoryEstimation, generateShoppingList } from '../services/inventoryEstimationService.js';
 
 const BaseDet = z.object({
   class: z.string(),
@@ -35,10 +36,14 @@ const PostDetectionsSchema = z.object({
 async function resolveTrolleyId({ trolleyId, trolleyCode }) {
   if (trolleyId) return trolleyId;
   if (!trolleyCode) return null;
+  // Some databases may contain multiple rows with the same code.
+  // Select the most recent one deterministically to avoid "multiple rows returned" errors.
   const { data, error } = await supabaseAdmin
     .from('trolleys')
-    .select('id')
+    .select('id, created_at')
     .eq('code', trolleyCode)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw error;
   return data?.id || null;
@@ -234,4 +239,188 @@ export async function postEstimateDouble(req, res) {
   const d = detections.map(det => ({ ...det, frame }));
   const result = await computeDoubleSided({ detections: d, spec, side });
   return res.json(result);
+}
+
+// New comprehensive endpoint: analyze tray with inventory estimation
+const PostAnalyzeTraySchema = z.object({
+  trolleyCode: z.string().min(1),
+  trolleyId: z.string().uuid().optional(),
+  specName: z.string().default('doubleside.mx'),
+});
+
+export async function postAnalyzeTray(req, res) {
+  try {
+    const parsed = PostAnalyzeTraySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ 
+        error: 'Invalid payload', 
+        details: parsed.error.flatten() 
+      });
+    }
+
+    const { trolleyCode, trolleyId: providedId, specName } = parsed.data;
+    const frontFile = req.files?.front?.[0];
+    const backFile = req.files?.back?.[0];
+
+    if (!frontFile || !backFile) {
+      return res.status(400).json({ 
+        error: 'Both front and back images are required',
+        details: 'Upload images with field names: front, back'
+      });
+    }
+
+    // Resolve trolley
+    const trolleyId = await resolveTrolleyId({ 
+      trolleyId: providedId, 
+      trolleyCode 
+    });
+
+    if (!trolleyId) {
+      return res.status(404).json({ 
+        error: 'Trolley not found',
+        message: `Please create trolley with code: ${trolleyCode}` 
+      });
+    }
+
+    // Load spec
+    let spec;
+    try {
+      spec = await loadSpec(specName);
+    } catch (e) {
+      return res.status(404).json({ error: 'Spec not found' });
+    }
+
+    // Run YOLO inference on both images
+    const [frontInference, backInference] = await Promise.all([
+      detectOnServer(frontFile.path),
+      detectOnServer(backFile.path),
+    ]);
+
+    if (!frontInference.supported || !backInference.supported) {
+      return res.status(500).json({
+        error: 'Server inference not available',
+        details: {
+          front: frontInference.reason,
+          back: backInference.reason,
+        }
+      });
+    }
+
+    const frontDetections = frontInference.detections || [];
+    const backDetections = backInference.detections || [];
+
+    // Calculate occupancy for both sides
+    const frontOccupancy = await computeDoubleSided({
+      detections: frontDetections.map(d => ({ ...d, frame: frontInference.frame })),
+      spec,
+      side: 'front',
+    });
+
+    const backOccupancy = await computeDoubleSided({
+      detections: backDetections.map(d => ({ ...d, frame: backInference.frame })),
+      spec,
+      side: 'back',
+    });
+
+    // Calculate inventory estimation for both sides
+    const frontInventory = calculateMissingProducts({
+      detections: frontDetections,
+      spec,
+      side: 'front',
+    });
+
+    const backInventory = calculateMissingProducts({
+      detections: backDetections,
+      spec,
+      side: 'back',
+    });
+
+    // Merge results for overall metrics (volume-based, ROI-agnostic for robustness)
+    const totalVolumeUsed = frontInventory.volumeUsedLiters + backInventory.volumeUsedLiters;
+    const totalCapacity = frontInventory.trayCapacityLiters + backInventory.trayCapacityLiters;
+    const overallOccupancy = (totalVolumeUsed / Math.max(1e-6, totalCapacity)) * 100;
+
+    // Combine missing products from both sides
+    const allMissingProducts = [
+      ...frontInventory.missingProducts.map(p => ({ ...p, side: 'front' })),
+      ...backInventory.missingProducts.map(p => ({ ...p, side: 'back' })),
+    ];
+
+    // Generate shopping list
+    const shoppingList = generateShoppingList(allMissingProducts);
+
+    // Use volume-based percent for side-level occupancy to avoid ROI alignment issues
+    const frontOccMerged = { ...frontOccupancy, overallPercent: Number(frontInventory.occupancyPercent.toFixed(2)) };
+    const backOccMerged = { ...backOccupancy, overallPercent: Number(backInventory.occupancyPercent.toFixed(2)) };
+
+    // Prepare comprehensive result
+    const analysisResult = {
+      trolleyCode,
+      timestamp: new Date().toISOString(),
+      images: {
+        front: path.basename(frontFile.path),
+        back: path.basename(backFile.path),
+      },
+      detections: {
+        front: frontDetections,
+        back: backDetections,
+      },
+      occupancy: {
+        front: frontOccMerged,
+        back: backOccMerged,
+        overall: {
+          percent: Number(overallOccupancy.toFixed(2)),
+          volumeUsedLiters: Number(totalVolumeUsed.toFixed(3)),
+          volumeAvailableLiters: Number((totalCapacity - totalVolumeUsed).toFixed(3)),
+          totalCapacityLiters: Number(totalCapacity.toFixed(3)),
+        },
+      },
+      inventory: {
+        front: frontInventory,
+        back: backInventory,
+        summary: {
+          totalCurrentProducts: frontInventory.currentProducts.length + backInventory.currentProducts.length,
+          totalMissingProducts: allMissingProducts.length,
+          targetOccupancy: frontInventory.targetOccupancyPercent,
+        },
+      },
+      shoppingList,
+      recommendations: {
+        status: overallOccupancy < 70 ? 'needs_refill' : overallOccupancy > 95 ? 'overfilled' : 'optimal',
+        message: overallOccupancy < 70 
+          ? `Tray is only ${overallOccupancy.toFixed(1)}% full. Recommend adding products.`
+          : overallOccupancy > 95
+          ? `Tray is ${overallOccupancy.toFixed(1)}% full. May be overfilled.`
+          : `Tray occupancy is optimal at ${overallOccupancy.toFixed(1)}%.`,
+      },
+    };
+
+    // Save to database
+    const dbRow = await saveInventoryEstimation({
+      trolleyId,
+      trolleyCode,
+      analysisResult,
+      inventoryEstimation: {
+        front: frontInventory,
+        back: backInventory,
+        shoppingList,
+      },
+      imagePath: frontFile.path, // Store primary image path
+    });
+
+    return res.json({
+      ok: true,
+      analysisId: dbRow.id,
+      trolleyId,
+      trolleyCode,
+      result: analysisResult,
+    });
+
+  } catch (err) {
+    console.error('[postAnalyzeTray] error:', err);
+    return res.status(500).json({ 
+      error: 'Analysis failed', 
+      message: err.message 
+    });
+  }
 }

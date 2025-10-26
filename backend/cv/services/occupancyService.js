@@ -116,7 +116,7 @@ export async function computeTrayOccupancy({ detections = [], spec }) {
 // Compute per-tray volume utilization (liters) if we can map class -> item volume
 // Returns { overallPercent, trays:[{ id, label, capacityLiters, usedLiters, percent, count }] }
 export async function computeTrayVolumes({ detections = [], spec }) {
-  if (!spec?.trays?.length || !detections?.length) {
+  if (!spec?.trays?.length) {
     return { overallPercent: 0, trays: [] };
   }
 
@@ -148,22 +148,24 @@ export async function computeTrayVolumes({ detections = [], spec }) {
 
   const liters = (cm3) => (cm3 || 0) / 1000;
 
-  for (const det of detections) {
-    const cls = String(det.class).toLowerCase();
-    // Map detected class to our catalog entry
-    const item = Dimensions.items[cls] || Dimensions.items['can'];
-    const v = item?.contentVolumeCm3 || item?.geomVolumeCm3 || 0;
+  if (Array.isArray(detections) && detections.length) {
+    for (const det of detections) {
+      const cls = String(det.class).toLowerCase();
+      // Map detected class to our catalog entry
+      const item = Dimensions.items[cls] || Dimensions.items['can'];
+      const v = item?.contentVolumeCm3 || item?.geomVolumeCm3 || 0;
 
-    for (let i = 0; i < spec.trays.length; i++) {
-      const tray = spec.trays[i];
-      const accepted = tray.classes?.some(canon => {
-        const set = classAlias.get(canon) || new Set([canon]);
-        return set.has(cls);
-      });
-      if (!accepted) continue;
-      if (inRoi(det, tray.roi, frameW, frameH)) {
-        trayResults[i].count += 1;
-        trayResults[i].usedLiters += liters(v);
+      for (let i = 0; i < spec.trays.length; i++) {
+        const tray = spec.trays[i];
+        const accepted = tray.classes?.some(canon => {
+          const set = classAlias.get(canon) || new Set([canon]);
+          return set.has(cls);
+        });
+        if (!accepted) continue;
+        if (inRoi(det, tray.roi, frameW, frameH)) {
+          trayResults[i].count += 1;
+          trayResults[i].usedLiters += liters(v);
+        }
       }
     }
   }

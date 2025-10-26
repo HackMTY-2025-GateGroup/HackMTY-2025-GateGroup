@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { upload } from '../middleware/upload.js';
-import { postOccupancy, postDetections, postImage, getLatest, getSpec, listAllSpecs, postEstimate, postEstimateVolume, postEstimateDouble } from '../controllers/occupancyController.js';
+import { postOccupancy, postDetections, postImage, getLatest, getSpec, listAllSpecs, postEstimate, postEstimateVolume, postEstimateDouble, postAnalyzeTray } from '../controllers/occupancyController.js';
 
 const router = Router();
 
@@ -28,5 +28,11 @@ router.post('/estimate-volume', postEstimateVolume);
 
 // 8) Double-sided rows (front/back)
 router.post('/estimate-doubleside', postEstimateDouble);
+
+// 9) Comprehensive tray analysis with inventory estimation (front + back images)
+router.post('/analyze-tray', upload.fields([
+  { name: 'front', maxCount: 1 },
+  { name: 'back', maxCount: 1 }
+]), postAnalyzeTray);
 
 export default router;

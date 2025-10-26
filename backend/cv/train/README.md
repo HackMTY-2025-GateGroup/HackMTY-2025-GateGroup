@@ -1,3 +1,7 @@
+
+# (alternativa) 
+yolo export model=.\runs\trolley_v1\weights\best.pt format=coreml imgsz=640 nms=True
+
 # Setup rápido (Windows PowerShell)
 
 
