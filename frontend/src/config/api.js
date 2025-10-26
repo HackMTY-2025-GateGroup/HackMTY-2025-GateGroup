@@ -18,6 +18,7 @@ const config = {
     // CRM Alerts
     alerts: '/api/alerts',
     notifications: '/api/notifications',
+    inventoryMovements: '/api/inventories/movements',
     
     // Photo Management
     photoUpload: '/api/photos/upload',
@@ -49,7 +50,7 @@ const config = {
 
   // App Settings
   app: {
-    name: 'Airline Catering Waste Management',
+    name: 'Opsight',
     version: '1.0.0',
     maxPhotoSize: 10 * 1024 * 1024, // 10MB
     supportedImageFormats: ['image/jpeg', 'image/png', 'image/webp'],
