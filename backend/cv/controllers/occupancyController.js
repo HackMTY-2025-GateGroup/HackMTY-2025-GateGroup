@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { computeOccupancy, computeTrayOccupancy, computeTrayVolumes, computeDoubleSided } from '../services/occupancyService.js';
 import { loadSpec, listSpecs } from '../services/specService.js';
-import { detectOnServer, detectVisualOccupancy, estimateVisualOccupancyHeuristic, generateDetectionVisualization } from '../services/yoloService.js';
+import { detectOnServer, detectVisualOccupancy, estimateVisualOccupancyHeuristic, generateDetectionVisualization, enhanceDetectionsWithSmartCookieDetection } from '../services/yoloService.js';
 import { calculateMissingProducts, saveInventoryEstimation, generateShoppingList } from '../services/inventoryEstimationService.js';
 
 const BaseDet = z.object({
@@ -333,15 +333,33 @@ export async function postAnalyzeTray(req, res) {
 
     console.log('[postAnalyzeTray] Detections - Front:', frontDetections.length, 'Back:', backDetections.length);
 
+    // ENHANCEMENT: Use smart cookie detection to enhance YOLO results
+    console.log('[postAnalyzeTray] Enhancing detections with smart cookie detection...');
+    const [frontEnhanced, backEnhanced] = await Promise.allSettled([
+      enhanceDetectionsWithSmartCookieDetection(frontFile.path, frontDetections),
+      enhanceDetectionsWithSmartCookieDetection(backFile.path, backDetections)
+    ]);
+
+    // Use enhanced detections if successful, otherwise fallback to original
+    const finalFrontDetections = frontEnhanced.status === 'fulfilled' && frontEnhanced.value.success 
+      ? frontEnhanced.value.detections 
+      : frontDetections;
+    
+    const finalBackDetections = backEnhanced.status === 'fulfilled' && backEnhanced.value.success 
+      ? backEnhanced.value.detections 
+      : backDetections;
+
+    console.log('[postAnalyzeTray] Enhanced Detections - Front:', finalFrontDetections.length, 'Back:', finalBackDetections.length);
+
     // ENHANCEMENT: Calculate visual occupancy for enhanced accuracy
     console.log('[postAnalyzeTray] Computing visual occupancy (fill level analysis)...');
     const frontVisualResult = estimateVisualOccupancyHeuristic(
-      frontDetections,
+      finalFrontDetections,
       frontInference.frame?.w || 640,
       frontInference.frame?.h || 480
     );
     const backVisualResult = estimateVisualOccupancyHeuristic(
-      backDetections,
+      finalBackDetections,
       backInference.frame?.w || 640,
       backInference.frame?.h || 480
     );
@@ -352,13 +370,13 @@ export async function postAnalyzeTray(req, res) {
     // Calculate occupancy for both sides using YOLO detections
     console.log('[postAnalyzeTray] Computing occupancy...');
     const frontOccupancy = await computeDoubleSided({
-      detections: frontDetections.map(d => ({ ...d, frame: frontInference.frame })),
+      detections: finalFrontDetections.map(d => ({ ...d, frame: frontInference.frame })),
       spec,
       side: 'front',
     });
 
     const backOccupancy = await computeDoubleSided({
-      detections: backDetections.map(d => ({ ...d, frame: backInference.frame })),
+      detections: finalBackDetections.map(d => ({ ...d, frame: backInference.frame })),
       spec,
       side: 'back',
     });
@@ -366,13 +384,13 @@ export async function postAnalyzeTray(req, res) {
     // Calculate inventory estimation for both sides
     console.log('[postAnalyzeTray] Computing inventory...');
     const frontInventory = calculateMissingProducts({
-      detections: frontDetections,
+      detections: finalFrontDetections,
       spec,
       side: 'front',
     });
 
     const backInventory = calculateMissingProducts({
-      detections: backDetections,
+      detections: finalBackDetections,
       spec,
       side: 'back',
     });
@@ -461,13 +479,13 @@ export async function postAnalyzeTray(req, res) {
     const [frontViz, backViz] = await Promise.allSettled([
       generateDetectionVisualization(
         frontFile.path,
-        frontDetections,
+        finalFrontDetections,
         dbRow.id,
         frontInference.frame
       ),
       generateDetectionVisualization(
         backFile.path,
-        backDetections,
+        finalBackDetections,
         dbRow.id,
         backInference.frame
       )

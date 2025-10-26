@@ -187,6 +187,48 @@ export async function detectVisualOccupancy(imagePath) {
  * Only shows detections INSIDE drawers (red zones)
  * Ignores yellow zones (outside drawers)
  */
+export async function enhanceDetectionsWithSmartCookieDetection(imagePath, yoloDetections) {
+  try {
+    const smartDetectorScript = path.resolve(__dirname, '..', 'train', 'smart_cookie_detector.py');
+    const pyBin = process.env.PYTHON_BIN || 'python';
+    
+    // Create temporary file with YOLO detections
+    const tempDetectionsPath = path.join(path.dirname(imagePath), `temp_detections_${Date.now()}.json`);
+    
+    // Ensure yoloDetections is an array
+    const detectionsArray = Array.isArray(yoloDetections) ? yoloDetections : [];
+    fs.writeFileSync(tempDetectionsPath, JSON.stringify(detectionsArray, null, 2));
+    
+    // Call smart cookie detector
+    const result = await runPythonWithBin(pyBin, [
+      smartDetectorScript,
+      imagePath,
+      tempDetectionsPath
+    ], { timeoutMs: 15000 });
+    
+    // Clean up temp file
+    try { fs.unlinkSync(tempDetectionsPath); } catch {}
+    
+    // Parse enhanced detections
+    const enhancedDetections = JSON.parse(result);
+    
+    console.log(`[enhanceDetectionsWithSmartCookieDetection] Enhanced ${detectionsArray.length} → ${enhancedDetections.length} detections`);
+    
+    return {
+      success: true,
+      detections: enhancedDetections
+    };
+    
+  } catch (error) {
+    console.error('[enhanceDetectionsWithSmartCookieDetection] Error:', error.message);
+    return {
+      success: false,
+      detections: yoloDetections, // Fallback to original detections
+      error: error.message
+    };
+  }
+}
+
 export async function generateDetectionVisualization(imagePath, detections, analysisId, frameInfo) {
   try {
     // Create output directory
