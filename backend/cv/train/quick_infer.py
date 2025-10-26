@@ -15,13 +15,14 @@ def parse_args():
     p = argparse.ArgumentParser(description="Run YOLO inference on one image and optionally POST detections to backend")
     p.add_argument("--weights", type=str, required=True, help="Path to trained .pt or pretrained (e.g., yolov8n.pt)")
     p.add_argument("--image", type=str, required=True, help="Path to image file")
-    p.add_argument("--imgsz", type=int, default=640)
-    p.add_argument("--conf", type=float, default=0.25)
-    p.add_argument("--iou", type=float, default=0.7)
+    p.add_argument("--imgsz", type=int, default=960)
+    p.add_argument("--conf", type=float, default=0.15)
+    p.add_argument("--iou", type=float, default=0.6)
     p.add_argument("--backend_url", type=str, default=None, help="e.g., http://localhost:5000")
     p.add_argument("--post", type=str, choices=["none","estimate-volume","estimate-doubleside"], default="none")
     p.add_argument("--specName", type=str, default="doubleside.mx")
     p.add_argument("--side", type=str, choices=["front","back"], default="front")
+    p.add_argument("--save_annotated", action="store_true", help="Save annotated image next to input")
     return p.parse_args()
 
 
@@ -61,7 +62,19 @@ def main():
         raise SystemExit("No results returned by model")
 
     detections, frame = to_detections(results[0], model.names)
-    print(json.dumps({"frame": frame, "detections": detections}, indent=2))
+    out = {"frame": frame, "detections": detections}
+    try:
+        if args.save_annotated:
+            # Save annotated image for debugging
+            result = results[0]
+            save_path = str(img.with_suffix(".annotated.jpg"))
+            plotted = result.plot()
+            Image.fromarray(plotted).save(save_path)
+            out["annotated"] = save_path
+    except Exception:
+        pass
+
+    print(json.dumps(out, indent=2))
 
     if args.post != "none":
         if not args.backend_url:
