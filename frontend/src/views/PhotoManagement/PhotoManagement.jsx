@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Search, Filter, Package, AlertCircle, CheckCircle, TrendingUp } from 'lucide-react';
+import { Upload, Image as ImageIcon, Package, AlertCircle, CheckCircle, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { useQuery } from '@tanstack/react-query';
-import { get, post } from '@/lib/api';
+import { get, post, uploadMultipart } from '@/lib/api';
 import config from '@/config/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -45,30 +44,7 @@ const PhotoManagement = () => {
     }
   };
 
-  // Fetch gallery (uses lib/api -> config.endpoints.photoList)
-  const {
-    data: photosResp,
-    error,
-    isLoading,
-    refetch,
-  } = useQuery({
-    queryKey: ['photoList'],
-    queryFn: () => get('photoList'),
-    staleTime: 10_000,
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: false,
-    onError: (err) => {
-      if (err?.status === 401) signOut();
-      else {
-        console.error('Error loading photos', err);
-      }
-    },
-  });
-
-  // Normalize backend response -> array of bundles
-  const photos = Array.isArray(photosResp?.data?.photos)
-    ? photosResp.data.photos
-    : (Array.isArray(photosResp?.photos) ? photosResp.photos : []);
+  // Removed gallery/history to simplify the view
 
   useEffect(() => {
     return () => {
@@ -127,22 +103,8 @@ const PhotoManagement = () => {
       formData.append('trolleyCode', trolleyCode.trim());
       formData.append('specName', 'doubleside.mx');
 
-      // Call the new comprehensive endpoint
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${config.endpoints.analyzeTray}`,
-        {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || errorData.error || 'Analysis failed');
-      }
-
-      const data = await response.json();
+      // Call the new comprehensive endpoint via API wrapper (uses VITE_API_URL)
+      const data = await uploadMultipart('analyzeTray', formData, { credentials: 'include' });
       
       if (data.ok && data.result) {
         setAnalysisResult(data.result);
@@ -155,8 +117,7 @@ const PhotoManagement = () => {
         throw new Error('Invalid response from server');
       }
 
-      // Refresh gallery
-      refetch();
+      // No gallery to refresh
     } catch (err) {
       // Unauthorized -> sign out
       if (err?.status === 401) {
@@ -422,66 +383,7 @@ const PhotoManagement = () => {
         </>
       )}
 
-      {/* Search / Filters */}
-      <div className="flex gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search analysis history..." className="pl-9" />
-        </div>
-        <Button variant="outline">
-          <Filter className="mr-2 h-4 w-4" />
-          Filter
-        </Button>
-      </div>
-
-      {/* Photo Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {isLoading ? (
-          <div>Loading photos...</div>
-        ) : error ? (
-          <div className="text-destructive">Error loading photos</div>
-        ) : photos.length > 0 ? (
-          photos.map((bundle) => (
-            <Card key={bundle.id} className="overflow-hidden">
-              <div className="flex gap-2 p-2 bg-muted/10">
-                <div className="flex-1 aspect-video bg-black/5 flex items-center justify-center">
-                  <img src={bundle.frontUrl || bundle.front || bundle.url || '/placeholder-front.svg'} alt="front" className="max-h-44 object-contain" />
-                </div>
-                <div className="flex-1 aspect-video bg-black/5 flex items-center justify-center">
-                  <img src={bundle.backUrl || bundle.back || '/placeholder-back.svg'} alt="back" className="max-h-44 object-contain" />
-                </div>
-              </div>
-              <CardContent className="p-4">
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between">
-                    <h3 className="font-semibold text-sm truncate">{bundle.filename || bundle.id}</h3>
-                    <Badge variant={bundle.status === 'analyzed' ? 'default' : 'secondary'}>{bundle.status || 'pending'}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{bundle.uploadedAt}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {(bundle.tags || []).map((tag, idx) => (
-                      <Badge key={idx} variant="outline" className="text-xs">{tag}</Badge>
-                    ))}
-                  </div>
-
-                  {bundle.aiResults && (
-                    <div className="pt-2 border-t border-border space-y-1">
-                      <p className="text-xs"><span className="font-medium">Efficiency:</span> {bundle.aiResults.efficiency}</p>
-                      <p className="text-xs"><span className="font-medium">Waste:</span> {bundle.aiResults.wasteDetected}</p>
-                    </div>
-                  )}
-
-                  <Button variant="outline" size="sm" className="w-full mt-2">View Details</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <div className="col-span-3 text-center py-12 text-muted-foreground">
-            No analysis history yet. Upload your first tray photos above.
-          </div>
-        )}
-      </div>
+      {/* Gallery removed per request */}
     </div>
   );
 };

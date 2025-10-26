@@ -2,9 +2,8 @@ import { z } from 'zod';
 import path from 'node:path';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { computeOccupancy, computeTrayOccupancy, computeTrayVolumes, computeDoubleSided } from '../services/occupancyService.js';
-import { computeTrayVisualOccupancy } from '../services/visualOccupancyService.js';
 import { loadSpec, listSpecs } from '../services/specService.js';
-import { detectOnServer } from '../services/yoloService.js';
+import { detectOnServer, detectVisualOccupancy } from '../services/yoloService.js';
 import { calculateMissingProducts, saveInventoryEstimation, generateShoppingList } from '../services/inventoryEstimationService.js';
 
 const BaseDet = z.object({
@@ -279,7 +278,7 @@ export async function postAnalyzeTray(req, res) {
     if (!trolleyId) {
       return res.status(404).json({ 
         error: 'Trolley not found',
-        message: `Please create trolley with code: ${trolleyCode}` 
+        message: `Please create trolley with code: ${trolleyCode}`
       });
     }
 
@@ -291,7 +290,7 @@ export async function postAnalyzeTray(req, res) {
       return res.status(404).json({ error: 'Spec not found' });
     }
 
-    // Run YOLO inference on both images
+    // Run YOLO inference on both images IN PARALLEL
     const [frontInference, backInference] = await Promise.all([
       detectOnServer(frontFile.path),
       detectOnServer(backFile.path),
@@ -307,10 +306,30 @@ export async function postAnalyzeTray(req, res) {
       });
     }
 
+    // Try visual occupancy but don't block on failure
+    let frontVisualAnalysis = { supported: false, visual: null };
+    let backVisualAnalysis = { supported: false, visual: null };
+    
+    try {
+      const results = await Promise.allSettled([
+        detectVisualOccupancy(frontFile.path),
+        detectVisualOccupancy(backFile.path),
+      ]);
+      
+      if (results[0].status === 'fulfilled') {
+        frontVisualAnalysis = results[0].value || { supported: false };
+      }
+      if (results[1].status === 'fulfilled') {
+        backVisualAnalysis = results[1].value || { supported: false };
+      }
+    } catch (err) {
+      console.warn('[Visual Occupancy] Error:', err.message);
+    }
+
     const frontDetections = frontInference.detections || [];
     const backDetections = backInference.detections || [];
 
-    // Calculate occupancy for both sides
+    // Calculate occupancy for both sides using YOLO detections
     const frontOccupancy = await computeDoubleSided({
       detections: frontDetections.map(d => ({ ...d, frame: frontInference.frame })),
       spec,
@@ -323,11 +342,23 @@ export async function postAnalyzeTray(req, res) {
       side: 'back',
     });
 
-    // Visual occupancy fallback/boost using pixel statistics
-    const [frontVisual, backVisual] = await Promise.all([
-      computeTrayVisualOccupancy({ imagePath: frontFile.path, spec: { ...spec, trays: spec.trays.filter(t => (t.side||'front')==='front') } }),
-      computeTrayVisualOccupancy({ imagePath: backFile.path,  spec: { ...spec, trays: spec.trays.filter(t => (t.side||'front')==='back') } }),
-    ]);
+    // Build visual occupancy result (graceful fallback)
+    const buildVisualResult = (visual) => {
+      if (!visual?.supported || !visual?.visual) {
+        return { supported: false, overallPercent: 0 };
+      }
+      return {
+        supported: true,
+        score: visual.visual.final_score || 0,
+        percent: visual.visual.fill_percent || 0,
+        category: visual.visual.category || 'unknown',
+        overallPercent: ((visual.visual.final_score || 0) / 10) * 100,
+        detail: visual.visual.detail || {},
+      };
+    };
+
+    const frontVisual = buildVisualResult(frontVisualAnalysis);
+    const backVisual = buildVisualResult(backVisualAnalysis);
 
     // Calculate inventory estimation for both sides
     const frontInventory = calculateMissingProducts({
@@ -342,10 +373,16 @@ export async function postAnalyzeTray(req, res) {
       side: 'back',
     });
 
-    // Merge results for overall metrics (volume-based, with visual boost when detections miss closed trays)
-    const totalVolumeUsed = frontInventory.volumeUsedLiters + backInventory.volumeUsedLiters;
-    const totalCapacity = frontInventory.trayCapacityLiters + backInventory.trayCapacityLiters;
-    const overallOccupancy = (totalVolumeUsed / Math.max(1e-6, totalCapacity)) * 100;
+    // Merge results for overall metrics
+    const frontOccupancyPercent = frontVisual.supported 
+      ? frontVisual.overallPercent 
+      : Number(frontOccupancy.overallPercent || 0);
+
+    const backOccupancyPercent = backVisual.supported 
+      ? backVisual.overallPercent 
+      : Number(backOccupancy.overallPercent || 0);
+
+    const overallOccupancy = (frontOccupancyPercent + backOccupancyPercent) / 2;
 
     // Combine missing products from both sides
     const allMissingProducts = [
@@ -355,18 +392,6 @@ export async function postAnalyzeTray(req, res) {
 
     // Generate shopping list
     const shoppingList = generateShoppingList(allMissingProducts);
-
-  // Side-level percent: take the max of volume-based and visual estimation to handle enclosed products
-  const frontSidePercent = Math.max(Number(frontInventory.occupancyPercent || 0), Number(frontVisual.overallPercent || 0));
-  const backSidePercent = Math.max(Number(backInventory.occupancyPercent || 0), Number(backVisual.overallPercent || 0));
-
-  // If visual indicates near-empty, clamp to 0 to capture emptiness cases like the last trays in 17%.jpeg
-  const clampEmpty = (pct, visual) => (visual <= 12 ? 0 : pct);
-  const frontFinalPercent = clampEmpty(frontSidePercent, frontVisual.overallPercent);
-  const backFinalPercent = clampEmpty(backSidePercent, backVisual.overallPercent);
-
-  const frontOccMerged = { ...frontOccupancy, visual: frontVisual, overallPercent: Number(frontFinalPercent.toFixed(2)) };
-  const backOccMerged = { ...backOccupancy, visual: backVisual, overallPercent: Number(backFinalPercent.toFixed(2)) };
 
     // Prepare comprehensive result
     const analysisResult = {
@@ -381,13 +406,21 @@ export async function postAnalyzeTray(req, res) {
         back: backDetections,
       },
       occupancy: {
-        front: frontOccMerged,
-        back: backOccMerged,
+        front: {
+          ...frontOccupancy,
+          visual: frontVisual,
+          overallPercent: Number(frontOccupancyPercent.toFixed(2)),
+        },
+        back: {
+          ...backOccupancy,
+          visual: backVisual,
+          overallPercent: Number(backOccupancyPercent.toFixed(2)),
+        },
         overall: {
           percent: Number(overallOccupancy.toFixed(2)),
-          volumeUsedLiters: Number(totalVolumeUsed.toFixed(3)),
-          volumeAvailableLiters: Number((totalCapacity - totalVolumeUsed).toFixed(3)),
-          totalCapacityLiters: Number(totalCapacity.toFixed(3)),
+          volumeUsedLiters: Number((frontInventory.volumeUsedLiters + backInventory.volumeUsedLiters).toFixed(3)),
+          volumeAvailableLiters: Number((frontInventory.volumeAvailableLiters + backInventory.volumeAvailableLiters).toFixed(3)),
+          totalCapacityLiters: Number((frontInventory.trayCapacityLiters + backInventory.trayCapacityLiters).toFixed(3)),
         },
       },
       inventory: {
@@ -410,27 +443,7 @@ export async function postAnalyzeTray(req, res) {
       },
     };
 
-    // Optional bias mode: assume full and penalize for emptiness (hardcoded heuristic)
-    // Enable by setting OCCUPANCY_BIAS_MODE=full_then_penalize
-    if (process.env.OCCUPANCY_BIAS_MODE === 'full_then_penalize') {
-      function penalizePercent(pct) {
-        // If extremely empty, clamp to 50% instead of near-zero
-        if (pct <= 1) return 50;
-        // If very low, nudge up to avoid under-reporting on sparse detections
-        if (pct <= 15) return Math.max(pct, 60);
-        return pct;
-      }
-
-      const f = Number(analysisResult.occupancy.front.overallPercent || 0);
-      const b = Number(analysisResult.occupancy.back.overallPercent || 0);
-      const f2 = penalizePercent(f);
-      const b2 = penalizePercent(b);
-      analysisResult.occupancy.front.overallPercent = f2;
-      analysisResult.occupancy.back.overallPercent = b2;
-      analysisResult.occupancy.overall.percent = Number(((f2 + b2) / 2).toFixed(2));
-    }
-
-    // Save to database
+    // Save to database with complete analysis
     const dbRow = await saveInventoryEstimation({
       trolleyId,
       trolleyCode,
@@ -440,7 +453,7 @@ export async function postAnalyzeTray(req, res) {
         back: backInventory,
         shoppingList,
       },
-      imagePath: frontFile.path, // Store primary image path
+      imagePath: frontFile.path,
     });
 
     return res.json({
