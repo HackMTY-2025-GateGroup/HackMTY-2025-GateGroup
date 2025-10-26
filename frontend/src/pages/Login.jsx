@@ -97,9 +97,9 @@ const Login = () => {
               <Plane className="h-6 w-6 text-primary" />
             </div>
             */}
-            <img src="/logo_transparent.png" alt="OpSight Logo" className="h-12 w-15 mx-auto" />
+            <img src="/logo_transparent.png" alt="Opsight Logo" className="h-12 w-15 mx-auto" />
           </div>
-          <CardTitle className="text-2xl font-bold">Welcome to OpSight</CardTitle>
+          <CardTitle className="text-2xl font-bold">Welcome to Opsight</CardTitle>
           <CardDescription>
             Waste Management & Optimization System
           </CardDescription>

@@ -40,9 +40,9 @@ const Navbar = () => {
       <div className="flex h-16 items-center px-5 py-8 gap-4">
         <div className="flex flex-1 items-center gap-4">
           <div className="flex items-center justify-center">
-            <img src="/logo_transparent.png" alt="OpSight Logo" className="h-12 w-15 mx-auto" />
+            <img src="/logo_transparent.png" alt="Opsight Logo" className="h-12 w-15 mx-auto" />
             <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent ml-2">
-              OpSight
+              Opsight
             </h1>
           </div>
         </div>
