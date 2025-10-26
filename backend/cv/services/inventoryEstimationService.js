@@ -6,16 +6,26 @@ import { supabaseAdmin } from '../../config/supabase.js';
 // Base mapping for direct label matches
 const CLASS_TO_PRODUCT_MAP = {
   'can': { type: 'can_355ml', label: 'Can 355 ml', maxPerTray: 15 },
+  'cans': { type: 'can_355ml', label: 'Can 355 ml', maxPerTray: 15 },
   'cup': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
   'snack': { type: 'cookie_30g', label: 'Cookie 30g', maxPerTray: 64 },
+  'cookie': { type: 'cookie_30g', label: 'Cookie 30g', maxPerTray: 64 },
   'juice': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
   'carton': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
+  'juice_box': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
+  'bottle_water': { type: 'water_1_5l', label: 'Water 1.5 L', maxPerTray: 3 },
+  'water_bottle': { type: 'water_1_5l', label: 'Water 1.5 L', maxPerTray: 3 },
+  'water': { type: 'water_1_5l', label: 'Water 1.5 L', maxPerTray: 3 },
 };
 
 function inferProductFromDetection(det) {
   // Heuristic mapping when YOLO label is too generic (e.g., 'bottle')
   const raw = String(det.class || '').toLowerCase();
-  if (CLASS_TO_PRODUCT_MAP[raw]) return CLASS_TO_PRODUCT_MAP[raw];
+  const tags = Array.isArray(det?.tags) ? det.tags : [];
+  for (const tag of tags) {
+    const normalized = CLASS_TO_PRODUCT_MAP[tag];
+    if (normalized) return normalized;
+  }
 
   // Cartons often labeled as 'box', 'milk', 'carton'
   if (raw.includes('carton') || raw.includes('box') || raw.includes('milk')) {
@@ -236,7 +246,7 @@ export async function saveInventoryEstimation({
     console.warn('Inventory creation/find failed (continuing):', e);
   }
 
-  // Save the image analysis
+  // Build analysis payload
   const analysisPayload = {
     trolley_id: trolleyId,
     inventory_id: inventoryId,
@@ -249,15 +259,50 @@ export async function saveInventoryEstimation({
     model_version: 'yolo-server-v1',
   };
 
-  const { data: analysisRow, error: analysisError } = await supabaseAdmin
-    .from('image_analysis')
-    .insert(analysisPayload)
-    .select('*')
-    .maybeSingle();
+  // Check if there's an existing analysis for this trolley
+  let analysisRow = null;
+  try {
+    const { data: existingAnalysis, error: findError } = await supabaseAdmin
+      .from('image_analysis')
+      .select('id')
+      .eq('trolley_id', trolleyId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (analysisError) {
-    console.error('Error saving analysis:', analysisError);
-    throw analysisError;
+    if (!findError && existingAnalysis) {
+      // Update existing record
+      console.log('[saveInventoryEstimation] Updating existing analysis:', existingAnalysis.id);
+      const { data: updatedRow, error: updateError } = await supabaseAdmin
+        .from('image_analysis')
+        .update(analysisPayload)
+        .eq('id', existingAnalysis.id)
+        .select('*')
+        .maybeSingle();
+
+      if (updateError) {
+        console.error('Error updating analysis:', updateError);
+        throw updateError;
+      }
+      analysisRow = updatedRow;
+    } else {
+      // Insert new record
+      console.log('[saveInventoryEstimation] Creating new analysis');
+      const { data: insertedRow, error: insertError } = await supabaseAdmin
+        .from('image_analysis')
+        .insert(analysisPayload)
+        .select('*')
+        .maybeSingle();
+
+      if (insertError) {
+        console.error('Error saving analysis:', insertError);
+        throw insertError;
+      }
+      analysisRow = insertedRow;
+    }
+  } catch (e) {
+    console.error('[saveInventoryEstimation] Error in transaction:', e);
+    throw e;
   }
 
   return {

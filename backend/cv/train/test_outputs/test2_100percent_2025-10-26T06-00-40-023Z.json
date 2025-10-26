@@ -1,0 +1,87 @@
+{
+  "ok": true,
+  "analysisId": "1ce18223-56b4-43a0-bea7-490096e0e949",
+  "trolleyId": "10a157f4-a9d5-4f8a-9675-ba6dfdcf46ec",
+  "trolleyCode": "TEST-FULL-100",
+  "result": {
+    "trolleyCode": "TEST-FULL-100",
+    "trolleyId": "10a157f4-a9d5-4f8a-9675-ba6dfdcf46ec",
+    "timestamp": "2025-10-26T06:00:39.012Z",
+    "occupancy": {
+      "front": {
+        "overallPercent": 25.99,
+        "visualScore": 6.28,
+        "visualCategory": "good",
+        "fillPercent": 100,
+        "snackPercent": 0
+      },
+      "back": {
+        "overallPercent": 30.57,
+        "visualScore": 6.28,
+        "visualCategory": "good",
+        "fillPercent": 100,
+        "snackPercent": 0
+      },
+      "overall": {
+        "percent": 28.28,
+        "visualScore": 6.28,
+        "volumeUsedLiters": 142,
+        "volumeAvailableLiters": -76.584,
+        "totalCapacityLiters": 65.416
+      }
+    },
+    "inventory": {
+      "front": {
+        "currentProducts": [
+          {
+            "className": "water_1_5l",
+            "productType": "water_1_5l",
+            "label": "Water 1.5 L",
+            "detected": 41,
+            "volumePerItem": 1.5,
+            "totalVolume": 61.5
+          },
+          {
+            "className": "bottle",
+            "productType": "bottle",
+            "label": "Bottle 0.5 L",
+            "detected": 19,
+            "volumePerItem": 0.5,
+            "totalVolume": 9.5
+          }
+        ],
+        "count": 2
+      },
+      "back": {
+        "currentProducts": [
+          {
+            "className": "water_1_5l",
+            "productType": "water_1_5l",
+            "label": "Water 1.5 L",
+            "detected": 41,
+            "volumePerItem": 1.5,
+            "totalVolume": 61.5
+          },
+          {
+            "className": "bottle",
+            "productType": "bottle",
+            "label": "Bottle 0.5 L",
+            "detected": 19,
+            "volumePerItem": 0.5,
+            "totalVolume": 9.5
+          }
+        ],
+        "count": 2
+      }
+    },
+    "shoppingList": [],
+    "recommendations": {
+      "status": "needs_refill",
+      "message": "Tray is only 28.3% full. Recommend adding products."
+    },
+    "images": {
+      "front": "/analysis/1ce18223-56b4-43a0-bea7-490096e0e949_1761458433011-100__detections.jpg",
+      "back": "/analysis/1ce18223-56b4-43a0-bea7-490096e0e949_1761458433013-100__detections.jpg"
+    }
+  }
+}

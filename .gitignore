@@ -120,6 +120,6 @@ models/*.pth
 
 
 
-
+.venv/
 supabase.txt
 mlx-yoloexample/

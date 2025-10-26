@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useQuery } from '@tanstack/react-query';
 import { get, post, uploadTrayBundle } from '@/lib/api';
-import config from '@/config/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
@@ -418,8 +417,7 @@ const PhotoManagement = () => {
           )}
         </>
       )}
-
-      {/* Search / Filters */}
+      {/*
       <div className="flex gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -430,8 +428,7 @@ const PhotoManagement = () => {
           Filter
         </Button>
       </div>
-
-      {/* Photo Grid */}
+      
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? (
           <div>Loading photos...</div>
@@ -479,6 +476,7 @@ const PhotoManagement = () => {
           </div>
         )}
       </div>
+      */}
     </div>
   );
 };

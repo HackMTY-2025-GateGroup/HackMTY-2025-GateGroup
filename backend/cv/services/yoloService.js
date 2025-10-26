@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,8 +11,90 @@ const __dirname = path.dirname(__filename);
 function resolveWeightsPath() {
   // Prefer env, fallback to bundled yolov8n.pt in cv/train
   const envPath = process.env.YOLO_WEIGHTS || process.env.YOLO_MODEL_PATH; // support either var name
-  if (envPath) return envPath;
+  if (envPath) {
+    return path.isAbsolute(envPath) ? envPath : path.resolve(process.cwd(), envPath);
+  }
   return path.resolve(__dirname, '..', 'train', 'yolov8n.pt');
+}
+
+function computeGeometryFeatures(det) {
+  const bbox = Array.isArray(det?.bbox) ? det.bbox : [0, 0, 0, 0];
+  const frame = det?.frame || {};
+  const [, , w = 0, h = 0] = bbox;
+  const frameW = Number(frame.w) || 0;
+  const frameH = Number(frame.h) || 0;
+  const aspect = h > 0 ? w / h : 1;
+  const normH = frameH > 0 ? h / frameH : 0;
+  const normW = frameW > 0 ? w / frameW : 0;
+  const areaRatio = frameW > 0 && frameH > 0 ? (w * h) / (frameW * frameH) : 0;
+  return { aspect, normH, normW, areaRatio };
+}
+
+function classifyBeverageByGeometry(det) {
+  const { aspect, normH, normW, areaRatio } = computeGeometryFeatures(det);
+
+  // Short + wide silhouettes behave like cans
+  if ((aspect >= 0.78 && normH <= 0.22) || (normH <= 0.14 && aspect >= 0.7)) {
+    return 'can';
+  }
+
+  // Tall & slender -> bottled water profile
+  if (aspect <= 0.52 || normH >= 0.3) {
+    return 'bottle_water';
+  }
+
+  // Medium rectangle occupying noticeable width → juice box/carton
+  if ((normW >= 0.18 && aspect >= 0.55) || (areaRatio >= 0.02 && aspect >= 0.55)) {
+    return 'juice_box';
+  }
+
+  // Fallback: prefer bottled water for safety
+  return 'bottle_water';
+}
+
+function classifyDetection(det) {
+  const raw = String(det?.class || '').toLowerCase().trim();
+  if (!raw) return 'unknown';
+
+  if (raw.includes('cookie') || raw.includes('snack') || raw.includes('galleta')) {
+    return 'cookie';
+  }
+  if (raw.includes('juice') || raw.includes('carton') || raw.includes('box')) {
+    return 'juice_box';
+  }
+  if (raw.includes('can') || raw.includes('lat') || raw.includes('cup')) {
+    return 'can';
+  }
+  if (raw.includes('water')) {
+    return 'bottle_water';
+  }
+  if (raw.includes('coke') || raw.includes('cola')) {
+    return 'bottle_water';
+  }
+  if (raw.includes('bottle')) {
+    return classifyBeverageByGeometry(det);
+  }
+
+  // Generic fallback for objects we still want to treat as beverages
+  return classifyBeverageByGeometry(det);
+}
+
+function normalizeDetections(rawDetections) {
+  if (!Array.isArray(rawDetections)) return [];
+  return rawDetections.map(det => {
+    const normalizedClass = classifyDetection(det);
+    const original = det?.class;
+    const tags = new Set();
+    if (normalizedClass && normalizedClass !== 'unknown') tags.add(normalizedClass);
+    if (original) tags.add(String(original).toLowerCase());
+
+    return {
+      ...det,
+      originalClass: original,
+      class: normalizedClass,
+      tags: Array.from(tags),
+    };
+  });
 }
 
 function runPythonWithBin(pyBin, args, { timeoutMs = 30000 } = {}) {
@@ -103,12 +186,348 @@ export async function detectOnServer(imagePath) {
       else throw e;
     }
 
+    const rawDetections = Array.isArray(parsed?.detections) ? parsed.detections : [];
+    const detections = normalizeDetections(rawDetections);
+
     return {
       supported: true,
-      detections: Array.isArray(parsed?.detections) ? parsed.detections : [],
+      detections,
       frame: parsed?.frame || null,
     };
   } catch (e) {
     return { supported: false, reason: e.message || 'YOLO error', detections: [] };
   }
+}
+
+/**
+ * Detect occupancy using visual fill level analysis
+ * Runs the visual_occupancy.py Python script
+ * Returns: { supported: boolean, visual: {score, percent, category, ...}, reason?: string }
+ */
+export async function detectVisualOccupancy(imagePath) {
+  try {
+    const script = path.resolve(__dirname, '..', 'train', 'visual_occupancy.py');
+    const baseArgs = [script, '--image', imagePath];
+
+    const candidates = [];
+    if (process.env.PYTHON_BIN) candidates.push({ bin: process.env.PYTHON_BIN, args: baseArgs });
+    if (process.platform === 'win32') {
+      candidates.push({ bin: 'python', args: baseArgs });
+      candidates.push({ bin: 'py', args: baseArgs });
+      candidates.push({ bin: 'py', args: ['-3', ...baseArgs] });
+    } else {
+      candidates.push({ bin: 'python3', args: baseArgs });
+      candidates.push({ bin: 'python', args: baseArgs });
+    }
+
+    let stdout = null;
+    let lastError = null;
+
+    for (const cand of candidates) {
+      try {
+        const out = await runPythonWithBin(cand.bin, cand.args, { timeoutMs: 60000 });
+        stdout = out.stdout;
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        continue;
+      }
+    }
+
+    if (!stdout) {
+      const reason = lastError?.message || 'Python not available';
+      return { supported: false, reason, visual: null };
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(stdout);
+    } catch (e) {
+      const start = stdout.indexOf('{');
+      const end = stdout.lastIndexOf('}');
+      if (start >= 0 && end > start) parsed = JSON.parse(stdout.slice(start, end + 1));
+      else throw e;
+    }
+
+    // Check for errors in the response
+    if (parsed?.error) {
+      return { supported: false, reason: parsed.error, visual: null };
+    }
+
+    return {
+      supported: true,
+      visual: parsed,
+    };
+  } catch (e) {
+    return { supported: false, reason: e.message || 'Visual occupancy error', visual: null };
+  }
+}
+
+/**
+ * Generate visualization image with bounding boxes
+ * Calls Python script to draw detections on image
+ * Only shows detections INSIDE drawers (red zones)
+ * Ignores yellow zones (outside drawers)
+ */
+export async function enhanceDetectionsWithSmartCookieDetection(imagePath, yoloDetections) {
+  try {
+    const smartDetectorScript = path.resolve(__dirname, '..', 'train', 'smart_cookie_detector.py');
+    const pyBin = process.env.PYTHON_BIN || 'python';
+    
+    // Create temporary file with YOLO detections
+    const tempDetectionsPath = path.join(path.dirname(imagePath), `temp_detections_${Date.now()}.json`);
+    
+    // Ensure yoloDetections is an array
+    const detectionsArray = Array.isArray(yoloDetections) ? yoloDetections : [];
+    fs.writeFileSync(tempDetectionsPath, JSON.stringify(detectionsArray, null, 2));
+    
+    // Call smart cookie detector
+    const { stdout, stderr } = await runPythonWithBin(pyBin, [
+      smartDetectorScript,
+      imagePath,
+      tempDetectionsPath
+    ], { timeoutMs: 15000 });
+    
+    // Clean up temp file
+    try { fs.unlinkSync(tempDetectionsPath); } catch {}
+
+    const output = (stdout || '').trim();
+    if (!output) {
+      throw new Error(stderr?.trim() || 'Smart cookie detector produced no output');
+    }
+
+    let enhancedDetections;
+    try {
+      enhancedDetections = JSON.parse(output);
+    } catch (parseError) {
+      const start = output.indexOf('[');
+      const end = output.lastIndexOf(']');
+      if (start >= 0 && end > start) {
+        enhancedDetections = JSON.parse(output.slice(start, end + 1));
+      } else {
+        throw parseError;
+      }
+    }
+
+    if (!Array.isArray(enhancedDetections)) {
+      throw new Error('Smart cookie detector returned invalid payload');
+    }
+
+    const normalizedEnhanced = normalizeDetections(enhancedDetections);
+    
+    console.log(`[enhanceDetectionsWithSmartCookieDetection] Enhanced ${detectionsArray.length} → ${enhancedDetections.length} detections`);
+    
+    return {
+      success: true,
+      detections: normalizedEnhanced
+    };
+    
+  } catch (error) {
+    console.error('[enhanceDetectionsWithSmartCookieDetection] Error:', error.message);
+    return {
+      success: false,
+      detections: yoloDetections, // Fallback to original detections
+      error: error.message
+    };
+  }
+}
+
+export async function generateDetectionVisualization(imagePath, detections, analysisId, frameInfo) {
+  try {
+    // Create output directory
+    const outputDir = path.resolve(process.cwd(), 'analysis_output');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    // Generate output paths
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const baseName = path.basename(imagePath, path.extname(imagePath));
+    const outputImagePath = path.join(outputDir, `${analysisId}_${baseName}_detections.jpg`);
+    const detectionsJsonPath = path.join(outputDir, `${analysisId}_${baseName}_detections.json`);
+    
+    // Save detections to JSON
+    const detectionData = {
+      analysisId,
+      timestamp,
+      detections,
+      frame: frameInfo || { w: 640, h: 480 }
+    };
+    fs.writeFileSync(detectionsJsonPath, JSON.stringify(detectionData, null, 2));
+    
+    // Call Python script to draw boxes
+    const drawScript = path.resolve(__dirname, '..', 'train', 'draw_detections.py');
+    const pyBin = process.env.PYTHON_BIN || 'python';
+    
+    await runPythonWithBin(pyBin, [
+      drawScript,
+      imagePath,
+      detectionsJsonPath,
+      outputImagePath,
+      analysisId
+    ], { timeoutMs: 10000 });
+    
+    console.log(`[generateDetectionVisualization] ✓ Saved: ${outputImagePath}`);
+    
+    // Return relative path for API response
+    return {
+      success: true,
+      imagePath: `/analysis/${path.basename(outputImagePath)}`,
+      fullPath: outputImagePath
+    };
+    
+  } catch (error) {
+    console.error('[generateDetectionVisualization] Error:', error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Lightweight visual occupancy estimation using detection heuristics
+ * No external dependencies required - works with YOLO detection results
+ * Estimates fill level 0-10 based on detection patterns and spatial distribution
+ * 
+ * KEY INSIGHT: A FULL tray has:
+ * 1. Items packed at the TOP (vertical score ~9)
+ * 2. Multiple snacks/products detected (snack_percent high)
+ * 3. Dense distribution across the frame
+ */
+export function estimateVisualOccupancyHeuristic(detections, frameWidth, frameHeight) {
+  if (!detections || detections.length === 0) {
+    return {
+      supported: true,
+      visual: {
+        final_score: 0,
+        category: 'empty',
+        fill_percent: 0,
+        snack_percent: 0,
+        detail: 'No detections - empty tray'
+      }
+    };
+  }
+
+  // Analyze detection distribution
+  let topThird = 0;
+  let middleThird = 0;
+  let bottomThird = 0;
+  let totalArea = 0;
+  let snackArea = 0;  // Items we identify as snacks/products
+  let colorfulItems = 0;  // Bottles, cans
+
+  for (const det of detections) {
+    if (!det.bbox) continue;
+    
+    const [x, y, w, h] = det.bbox;
+    const area = w * h;
+    totalArea += area;
+    
+    // Vertical distribution
+    const centerY = y + h / 2;
+    if (centerY < frameHeight * 0.33) {
+      topThird += area;
+    } else if (centerY < frameHeight * 0.66) {
+      middleThird += area;
+    } else {
+      bottomThird += area;
+    }
+
+    // Snack detection heuristic (Coca, colorful items, galletas)
+    const label = String(det.class || '').toLowerCase();
+
+    const isSnack = label.includes('cookie') || label.includes('snack') || label.includes('galleta');
+    
+    const isBottleOrCan = label.includes('bottle') || label.includes('water') || label.includes('can') || label.includes('juice');
+
+    if (isSnack) snackArea += area;
+    if (isBottleOrCan) colorfulItems += area;
+  }
+
+  // Calculate percentages with better scaling
+  const frameArea = frameWidth * frameHeight;
+  
+  // Fill percent: how much area is occupied (boosted)
+  const fillPercent = Math.min(100, (totalArea / frameArea) * 100 * 1.8);
+  
+  // Snack percent: focused on identified snacks
+  const snackPercent = snackArea > 0 ? Math.min(100, (snackArea / frameArea) * 100 * 2.5) : 0;
+  
+  // Product detection bonus: more items = fuller
+  const detectionBonus = Math.min(10, detections.length);
+
+  // Vertical score: CRITICAL - where are items packed?
+  let verticalScore = 5;
+  let topRatio = 0;
+  
+  if (topThird + middleThird + bottomThird > 0) {
+    topRatio = topThird / (topThird + middleThird + bottomThird);
+  }
+  
+  if (topRatio > 0.5) {
+    // Items packed at top = FULL
+    verticalScore = 9.5;
+  } else if (topRatio > 0.35) {
+    // Mostly top with some middle
+    verticalScore = 8;
+  } else if (bottomThird > topThird * 2) {
+    // Gravity settled = sparse
+    verticalScore = 2;
+  } else if (middleThird > topThird && middleThird > bottomThird) {
+    // Balanced
+    verticalScore = 6.5;
+  } else {
+    verticalScore = 5;
+  }
+
+  // Line detection heuristic: estimate fill line position
+  const avgDetectionY = (topThird > 0 || middleThird > 0 || bottomThird > 0) 
+    ? (topThird * 0.17 + middleThird * 0.5 + bottomThird * 0.83) / (topThird + middleThird + bottomThird)
+    : 0.5;
+  
+  const fillLineScore = Math.min(10, ((1 - avgDetectionY) * 10));
+
+  // Scoring components
+  const fill_score = Math.min(10, (fillPercent / 100) * 10);
+  const vert_weighted = (verticalScore / 10) * 10;
+  const line_weighted = (fillLineScore / 10) * 10;
+  const snack_bonus = Math.min(1.8, snackPercent / 15) * 10;
+  const detection_bonus = (detectionBonus / 10) * 10;
+
+  // IMPROVED FORMULA: Prioritize vertical distribution (fullness indicator)
+  const combined_score = (
+    vert_weighted * 0.35 +    // 35% - CRITICAL: items at top = full
+    fill_score * 0.30 +       // 30% - area coverage
+    snack_bonus * 0.20 +      // 20% - snack/galleta detection
+    line_weighted * 0.10 +    // 10% - line position
+    detection_bonus * 0.05    // 5% - bonus for multiple items
+  );
+
+  const final_score = Math.min(10, Math.max(0, combined_score));
+
+  // Categorize
+  let category = 'empty';
+  if (final_score < 1) category = 'empty';
+  else if (final_score < 3) category = 'sparse';
+  else if (final_score < 5) category = 'partial';
+  else if (final_score < 7) category = 'good';
+  else if (final_score < 9) category = 'nearly_full';
+  else category = 'full';
+
+  return {
+    supported: true,
+    visual: {
+      final_score: Math.round(final_score * 100) / 100,
+      category,
+      fill_percent: Math.round(fillPercent * 100) / 100,
+      snack_percent: Math.round(snackPercent * 100) / 100,
+      vertical_score: Math.round(verticalScore * 100) / 100,
+      fill_line_score: Math.round(fillLineScore * 100) / 100,
+      detection_count: detections.length,
+      topRatio: Math.round(topRatio * 100) / 100,
+      detail: `${detections.length} items detected, ${snackPercent.toFixed(0)}% appear to be snacks/galletas. Items packed at top: ${Math.round(topRatio * 100)}%`
+    }
+  };
 }

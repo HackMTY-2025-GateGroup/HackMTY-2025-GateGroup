@@ -1,0 +1,121 @@
+{
+  "analysisId": "0f767c41-849c-4dbd-94ed-ff6420d129f7",
+  "timestamp": "2025-10-26T11-04-09-795Z",
+  "detections": [
+    {
+      "class": "bottle_water",
+      "score": 0.9714836478233337,
+      "bbox": [
+        180.7248077392578,
+        539.5384521484375,
+        70.82835388183594,
+        142.63055419921875
+      ],
+      "frame": {
+        "w": 309,
+        "h": 856
+      },
+      "originalClass": "bottle_water",
+      "tags": [
+        "bottle_water"
+      ]
+    },
+    {
+      "class": "bottle_water",
+      "score": 0.9484689235687256,
+      "bbox": [
+        56.24456787109375,
+        256.2738952636719,
+        85.83082580566406,
+        179.22793579101562
+      ],
+      "frame": {
+        "w": 309,
+        "h": 856
+      },
+      "originalClass": "bottle_water",
+      "tags": [
+        "bottle_water"
+      ]
+    },
+    {
+      "class": "bottle_water",
+      "score": 0.9307343363761902,
+      "bbox": [
+        168.8638153076172,
+        264.7746887207031,
+        84.23675537109375,
+        181.53005981445312
+      ],
+      "frame": {
+        "w": 309,
+        "h": 856
+      },
+      "originalClass": "bottle_water",
+      "tags": [
+        "bottle_water"
+      ]
+    },
+    {
+      "class": "bottle_water",
+      "score": 0.9176580905914307,
+      "bbox": [
+        205.46327209472656,
+        248.94308471679688,
+        58.43162536621094,
+        159.20364379882812
+      ],
+      "frame": {
+        "w": 309,
+        "h": 856
+      },
+      "originalClass": "bottle_water",
+      "tags": [
+        "bottle_water"
+      ]
+    },
+    {
+      "class": "bottle_water",
+      "score": 0.8845031261444092,
+      "bbox": [
+        128.95030212402344,
+        249.84628295898438,
+        60.892822265625,
+        153.919677734375
+      ],
+      "frame": {
+        "w": 309,
+        "h": 856
+      },
+      "originalClass": "bottle_water",
+      "tags": [
+        "bottle_water"
+      ]
+    },
+    {
+      "class": "cookie",
+      "score": 0.8,
+      "bbox": [
+        0,
+        599,
+        154,
+        813
+      ],
+      "frame": {
+        "w": 309,
+        "h": 856
+      },
+      "method": "fill_line_detection",
+      "drawer_id": "drawer_2_left",
+      "fill_percentage": 50,
+      "originalClass": "cookie",
+      "tags": [
+        "cookie"
+      ]
+    }
+  ],
+  "frame": {
+    "w": 309,
+    "h": 856
+  }
+}

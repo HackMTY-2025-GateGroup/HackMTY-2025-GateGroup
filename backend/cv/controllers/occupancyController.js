@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { computeOccupancy, computeTrayOccupancy, computeTrayVolumes, computeDoubleSided } from '../services/occupancyService.js';
-import { computeTrayVisualOccupancy } from '../services/visualOccupancyService.js';
+//import { computeTrayVisualOccupancy } from '../services/visualOccupancyService.js';
 import { loadSpec, listSpecs } from '../services/specService.js';
-import { detectOnServer } from '../services/yoloService.js';
+import { detectOnServer, detectVisualOccupancy, estimateVisualOccupancyHeuristic, generateDetectionVisualization, enhanceDetectionsWithSmartCookieDetection } from '../services/yoloService.js';
 import { calculateMissingProducts, saveInventoryEstimation, generateShoppingList } from '../services/inventoryEstimationService.js';
 
 const BaseDet = z.object({
@@ -270,17 +271,32 @@ export async function postAnalyzeTray(req, res) {
       });
     }
 
-    // Resolve trolley
-    const trolleyId = await resolveTrolleyId({ 
-      trolleyId: providedId, 
-      trolleyCode 
-    });
+    console.log('[postAnalyzeTray] Processing:', trolleyCode);
 
+    // Resolve or create trolley
+    let trolleyId = providedId;
+    if (!trolleyId && trolleyCode) {
+      const resolved = await resolveTrolleyId({ trolleyCode });
+      trolleyId = resolved;
+    }
+
+    // If trolley doesn't exist, create it
     if (!trolleyId) {
-      return res.status(404).json({ 
-        error: 'Trolley not found',
-        message: `Please create trolley with code: ${trolleyCode}` 
-      });
+      console.log('[postAnalyzeTray] Creating new trolley:', trolleyCode);
+      const { data: newTrolley, error: trolleyError } = await supabaseAdmin
+        .from('trolleys')
+        .insert({ code: trolleyCode })
+        .select('id')
+        .maybeSingle();
+
+      if (trolleyError || !newTrolley) {
+        console.error('[postAnalyzeTray] Error creating trolley:', trolleyError);
+        return res.status(500).json({ 
+          error: 'Failed to create trolley',
+          message: trolleyError?.message || 'Unknown error'
+        });
+      }
+      trolleyId = newTrolley.id;
     }
 
     // Load spec
@@ -288,16 +304,22 @@ export async function postAnalyzeTray(req, res) {
     try {
       spec = await loadSpec(specName);
     } catch (e) {
+      console.error('[postAnalyzeTray] Spec not found:', specName);
       return res.status(404).json({ error: 'Spec not found' });
     }
 
-    // Run YOLO inference on both images
+    // Run YOLO inference on both images IN PARALLEL
+    console.log('[postAnalyzeTray] Running YOLO inference...');
     const [frontInference, backInference] = await Promise.all([
       detectOnServer(frontFile.path),
       detectOnServer(backFile.path),
     ]);
 
     if (!frontInference.supported || !backInference.supported) {
+      console.warn('[postAnalyzeTray] YOLO not supported', {
+        front: frontInference.reason,
+        back: backInference.reason
+      });
       return res.status(500).json({
         error: 'Server inference not available',
         details: {
@@ -310,42 +332,74 @@ export async function postAnalyzeTray(req, res) {
     const frontDetections = frontInference.detections || [];
     const backDetections = backInference.detections || [];
 
-    // Calculate occupancy for both sides
+    console.log('[postAnalyzeTray] Detections - Front:', frontDetections.length, 'Back:', backDetections.length);
+
+    // ENHANCEMENT: Use smart cookie detection to enhance YOLO results
+    console.log('[postAnalyzeTray] Enhancing detections with smart cookie detection...');
+    const [frontEnhanced, backEnhanced] = await Promise.allSettled([
+      enhanceDetectionsWithSmartCookieDetection(frontFile.path, frontDetections),
+      enhanceDetectionsWithSmartCookieDetection(backFile.path, backDetections)
+    ]);
+
+    // Use enhanced detections if successful, otherwise fallback to original
+    const finalFrontDetections = frontEnhanced.status === 'fulfilled' && frontEnhanced.value.success 
+      ? frontEnhanced.value.detections 
+      : frontDetections;
+    
+    const finalBackDetections = backEnhanced.status === 'fulfilled' && backEnhanced.value.success 
+      ? backEnhanced.value.detections 
+      : backDetections;
+
+    console.log('[postAnalyzeTray] Enhanced Detections - Front:', finalFrontDetections.length, 'Back:', finalBackDetections.length);
+
+    // ENHANCEMENT: Calculate visual occupancy for enhanced accuracy
+    console.log('[postAnalyzeTray] Computing visual occupancy (fill level analysis)...');
+    const frontVisualResult = estimateVisualOccupancyHeuristic(
+      finalFrontDetections,
+      frontInference.frame?.w || 640,
+      frontInference.frame?.h || 480
+    );
+    const backVisualResult = estimateVisualOccupancyHeuristic(
+      finalBackDetections,
+      backInference.frame?.w || 640,
+      backInference.frame?.h || 480
+    );
+
+    console.log('[postAnalyzeTray] Front Visual Score:', frontVisualResult.visual.final_score, 'Category:', frontVisualResult.visual.category);
+    console.log('[postAnalyzeTray] Back Visual Score:', backVisualResult.visual.final_score, 'Category:', backVisualResult.visual.category);
+
+    // Calculate occupancy for both sides using YOLO detections
+    console.log('[postAnalyzeTray] Computing occupancy...');
     const frontOccupancy = await computeDoubleSided({
-      detections: frontDetections.map(d => ({ ...d, frame: frontInference.frame })),
+      detections: finalFrontDetections.map(d => ({ ...d, frame: frontInference.frame })),
       spec,
       side: 'front',
     });
 
     const backOccupancy = await computeDoubleSided({
-      detections: backDetections.map(d => ({ ...d, frame: backInference.frame })),
+      detections: finalBackDetections.map(d => ({ ...d, frame: backInference.frame })),
       spec,
       side: 'back',
     });
 
-    // Visual occupancy fallback/boost using pixel statistics
-    const [frontVisual, backVisual] = await Promise.all([
-      computeTrayVisualOccupancy({ imagePath: frontFile.path, spec: { ...spec, trays: spec.trays.filter(t => (t.side||'front')==='front') } }),
-      computeTrayVisualOccupancy({ imagePath: backFile.path,  spec: { ...spec, trays: spec.trays.filter(t => (t.side||'front')==='back') } }),
-    ]);
-
     // Calculate inventory estimation for both sides
+    console.log('[postAnalyzeTray] Computing inventory...');
     const frontInventory = calculateMissingProducts({
-      detections: frontDetections,
+      detections: finalFrontDetections,
       spec,
       side: 'front',
     });
 
     const backInventory = calculateMissingProducts({
-      detections: backDetections,
+      detections: finalBackDetections,
       spec,
       side: 'back',
     });
 
-    // Merge results for overall metrics (volume-based, with visual boost when detections miss closed trays)
-    const totalVolumeUsed = frontInventory.volumeUsedLiters + backInventory.volumeUsedLiters;
-    const totalCapacity = frontInventory.trayCapacityLiters + backInventory.trayCapacityLiters;
-    const overallOccupancy = (totalVolumeUsed / Math.max(1e-6, totalCapacity)) * 100;
+    // Merge results for overall metrics
+    const frontOccupancyPercent = Number(frontOccupancy.overallPercent || 0);
+    const backOccupancyPercent = Number(backOccupancy.overallPercent || 0);
+    const overallOccupancy = (frontOccupancyPercent + backOccupancyPercent) / 2;
 
     // Combine missing products from both sides
     const allMissingProducts = [
@@ -356,50 +410,45 @@ export async function postAnalyzeTray(req, res) {
     // Generate shopping list
     const shoppingList = generateShoppingList(allMissingProducts);
 
-  // Side-level percent: take the max of volume-based and visual estimation to handle enclosed products
-  const frontSidePercent = Math.max(Number(frontInventory.occupancyPercent || 0), Number(frontVisual.overallPercent || 0));
-  const backSidePercent = Math.max(Number(backInventory.occupancyPercent || 0), Number(backVisual.overallPercent || 0));
-
-  // If visual indicates near-empty, clamp to 0 to capture emptiness cases like the last trays in 17%.jpeg
-  const clampEmpty = (pct, visual) => (visual <= 12 ? 0 : pct);
-  const frontFinalPercent = clampEmpty(frontSidePercent, frontVisual.overallPercent);
-  const backFinalPercent = clampEmpty(backSidePercent, backVisual.overallPercent);
-
-  const frontOccMerged = { ...frontOccupancy, visual: frontVisual, overallPercent: Number(frontFinalPercent.toFixed(2)) };
-  const backOccMerged = { ...backOccupancy, visual: backVisual, overallPercent: Number(backFinalPercent.toFixed(2)) };
-
-    // Prepare comprehensive result
+    // Build clean result object
     const analysisResult = {
       trolleyCode,
+      trolleyId,
       timestamp: new Date().toISOString(),
-      images: {
-        front: path.basename(frontFile.path),
-        back: path.basename(backFile.path),
-      },
-      detections: {
-        front: frontDetections,
-        back: backDetections,
-      },
       occupancy: {
-        front: frontOccMerged,
-        back: backOccMerged,
+        front: { 
+          overallPercent: Number(frontOccupancyPercent.toFixed(2)),
+          visualScore: frontVisualResult.visual.final_score,
+          visualCategory: frontVisualResult.visual.category,
+          fillPercent: frontVisualResult.visual.fill_percent,
+          snackPercent: frontVisualResult.visual.snack_percent,
+        },
+        back: { 
+          overallPercent: Number(backOccupancyPercent.toFixed(2)),
+          visualScore: backVisualResult.visual.final_score,
+          visualCategory: backVisualResult.visual.category,
+          fillPercent: backVisualResult.visual.fill_percent,
+          snackPercent: backVisualResult.visual.snack_percent,
+        },
         overall: {
           percent: Number(overallOccupancy.toFixed(2)),
-          volumeUsedLiters: Number(totalVolumeUsed.toFixed(3)),
-          volumeAvailableLiters: Number((totalCapacity - totalVolumeUsed).toFixed(3)),
-          totalCapacityLiters: Number(totalCapacity.toFixed(3)),
+          visualScore: Number(((frontVisualResult.visual.final_score + backVisualResult.visual.final_score) / 2).toFixed(2)),
+          volumeUsedLiters: Number((frontInventory.volumeUsedLiters + backInventory.volumeUsedLiters).toFixed(3)),
+          volumeAvailableLiters: Number((frontInventory.volumeAvailableLiters + backInventory.volumeAvailableLiters).toFixed(3)),
+          totalCapacityLiters: Number((frontInventory.trayCapacityLiters + backInventory.trayCapacityLiters).toFixed(3)),
         },
       },
       inventory: {
-        front: frontInventory,
-        back: backInventory,
-        summary: {
-          totalCurrentProducts: frontInventory.currentProducts.length + backInventory.currentProducts.length,
-          totalMissingProducts: allMissingProducts.length,
-          targetOccupancy: frontInventory.targetOccupancyPercent,
+        front: { 
+          currentProducts: (frontInventory.currentProducts || []).slice(0, 100),
+          count: frontInventory.currentProducts?.length || 0,
+        },
+        back: { 
+          currentProducts: (backInventory.currentProducts || []).slice(0, 100),
+          count: backInventory.currentProducts?.length || 0,
         },
       },
-      shoppingList,
+      shoppingList: shoppingList.slice(0, 50),
       recommendations: {
         status: overallOccupancy < 70 ? 'needs_refill' : overallOccupancy > 95 ? 'overfilled' : 'optimal',
         message: overallOccupancy < 70 
@@ -410,27 +459,8 @@ export async function postAnalyzeTray(req, res) {
       },
     };
 
-    // Optional bias mode: assume full and penalize for emptiness (hardcoded heuristic)
-    // Enable by setting OCCUPANCY_BIAS_MODE=full_then_penalize
-    if (process.env.OCCUPANCY_BIAS_MODE === 'full_then_penalize') {
-      function penalizePercent(pct) {
-        // If extremely empty, clamp to 50% instead of near-zero
-        if (pct <= 1) return 50;
-        // If very low, nudge up to avoid under-reporting on sparse detections
-        if (pct <= 15) return Math.max(pct, 60);
-        return pct;
-      }
-
-      const f = Number(analysisResult.occupancy.front.overallPercent || 0);
-      const b = Number(analysisResult.occupancy.back.overallPercent || 0);
-      const f2 = penalizePercent(f);
-      const b2 = penalizePercent(b);
-      analysisResult.occupancy.front.overallPercent = f2;
-      analysisResult.occupancy.back.overallPercent = b2;
-      analysisResult.occupancy.overall.percent = Number(((f2 + b2) / 2).toFixed(2));
-    }
-
-    // Save to database
+    // Save to database with complete analysis
+    console.log('[postAnalyzeTray] Saving to database...');
     const dbRow = await saveInventoryEstimation({
       trolleyId,
       trolleyCode,
@@ -440,8 +470,39 @@ export async function postAnalyzeTray(req, res) {
         back: backInventory,
         shoppingList,
       },
-      imagePath: frontFile.path, // Store primary image path
+      imagePath: frontFile.path,
     });
+
+    console.log('[postAnalyzeTray] ✓ Saved with ID:', dbRow.id);
+
+    // Generate detection visualization images
+    console.log('[postAnalyzeTray] Generating detection visualizations...');
+    const [frontViz, backViz] = await Promise.allSettled([
+      generateDetectionVisualization(
+        frontFile.path,
+        finalFrontDetections,
+        dbRow.id,
+        frontInference.frame
+      ),
+      generateDetectionVisualization(
+        backFile.path,
+        finalBackDetections,
+        dbRow.id,
+        backInference.frame
+      )
+    ]);
+
+    // Add visualization paths to result
+    if (frontViz.status === 'fulfilled' && frontViz.value.success) {
+      analysisResult.images = analysisResult.images || {};
+      analysisResult.images.front = frontViz.value.imagePath;
+      console.log('[postAnalyzeTray] ✓ Front visualization:', frontViz.value.imagePath);
+    }
+    if (backViz.status === 'fulfilled' && backViz.value.success) {
+      analysisResult.images = analysisResult.images || {};
+      analysisResult.images.back = backViz.value.imagePath;
+      console.log('[postAnalyzeTray] ✓ Back visualization:', backViz.value.imagePath);
+    }
 
     return res.json({
       ok: true,
@@ -452,10 +513,11 @@ export async function postAnalyzeTray(req, res) {
     });
 
   } catch (err) {
-    console.error('[postAnalyzeTray] error:', err);
+    console.error('[postAnalyzeTray] ✗ Error:', err.message);
+    console.error('[postAnalyzeTray] Stack:', err.stack);
     return res.status(500).json({ 
       error: 'Analysis failed', 
-      message: err.message 
+      message: err.message,
     });
   }
 }
