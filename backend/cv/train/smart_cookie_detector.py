@@ -56,16 +56,27 @@ def detect_bottles_in_drawer(detections, drawer_bbox):
     
     bottles_in_drawer = []
     
+    beverage_keywords = (
+        'bottle', 'can', 'coke', 'soda', 'water', 'juice', 'drink', 'lata', 'carton', 'cup'
+    )
+
     for det in detections:
-        if det['class'] == 'bottle':
-            det_x1, det_y1, det_w, det_h = det['bbox']
-            det_x2 = det_x1 + det_w
-            det_y2 = det_y1 + det_h
-            
-            # Check if detection overlaps with drawer
-            if (det_x1 < drawer_x2 and det_x2 > drawer_x1 and 
-                det_y1 < drawer_y2 and det_y2 > drawer_y1):
-                bottles_in_drawer.append(det)
+        label = str(det.get('class', '')).lower()
+        bbox = det.get('bbox')
+        if not label or not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+            continue
+
+        if not any(keyword in label for keyword in beverage_keywords):
+            continue
+
+        det_x1, det_y1, det_w, det_h = bbox
+        det_x2 = det_x1 + det_w
+        det_y2 = det_y1 + det_h
+
+        # Check if detection overlaps with drawer
+        if (det_x1 < drawer_x2 and det_x2 > drawer_x1 and 
+            det_y1 < drawer_y2 and det_y2 > drawer_y1):
+            bottles_in_drawer.append(det)
     
     return bottles_in_drawer
 
@@ -121,7 +132,7 @@ def detect_cookies_by_fill_lines(img_path, yolo_detections):
             variance = np.var(gray_roi)
             
             # If variance is high enough, there's content (cookies)
-            if variance > 500:  # Adjust threshold as needed
+            if variance > 350:  # Adjusted threshold to better catch textured snack drawers
                 fill_percentage = calculate_fill_percentage(drawer_bbox, h)
                 
                 cookie_detections.append({

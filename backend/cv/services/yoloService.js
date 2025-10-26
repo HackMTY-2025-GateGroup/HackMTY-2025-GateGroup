@@ -17,6 +17,86 @@ function resolveWeightsPath() {
   return path.resolve(__dirname, '..', 'train', 'yolov8n.pt');
 }
 
+function computeGeometryFeatures(det) {
+  const bbox = Array.isArray(det?.bbox) ? det.bbox : [0, 0, 0, 0];
+  const frame = det?.frame || {};
+  const [, , w = 0, h = 0] = bbox;
+  const frameW = Number(frame.w) || 0;
+  const frameH = Number(frame.h) || 0;
+  const aspect = h > 0 ? w / h : 1;
+  const normH = frameH > 0 ? h / frameH : 0;
+  const normW = frameW > 0 ? w / frameW : 0;
+  const areaRatio = frameW > 0 && frameH > 0 ? (w * h) / (frameW * frameH) : 0;
+  return { aspect, normH, normW, areaRatio };
+}
+
+function classifyBeverageByGeometry(det) {
+  const { aspect, normH, normW, areaRatio } = computeGeometryFeatures(det);
+
+  // Short + wide silhouettes behave like cans
+  if ((aspect >= 0.78 && normH <= 0.22) || (normH <= 0.14 && aspect >= 0.7)) {
+    return 'can';
+  }
+
+  // Tall & slender -> bottled water profile
+  if (aspect <= 0.52 || normH >= 0.3) {
+    return 'bottle_water';
+  }
+
+  // Medium rectangle occupying noticeable width → juice box/carton
+  if ((normW >= 0.18 && aspect >= 0.55) || (areaRatio >= 0.02 && aspect >= 0.55)) {
+    return 'juice_box';
+  }
+
+  // Fallback: prefer bottled water for safety
+  return 'bottle_water';
+}
+
+function classifyDetection(det) {
+  const raw = String(det?.class || '').toLowerCase().trim();
+  if (!raw) return 'unknown';
+
+  if (raw.includes('cookie') || raw.includes('snack') || raw.includes('galleta')) {
+    return 'cookie';
+  }
+  if (raw.includes('juice') || raw.includes('carton') || raw.includes('box')) {
+    return 'juice_box';
+  }
+  if (raw.includes('can') || raw.includes('lat') || raw.includes('cup')) {
+    return 'can';
+  }
+  if (raw.includes('water')) {
+    return 'bottle_water';
+  }
+  if (raw.includes('coke') || raw.includes('cola')) {
+    return 'bottle_water';
+  }
+  if (raw.includes('bottle')) {
+    return classifyBeverageByGeometry(det);
+  }
+
+  // Generic fallback for objects we still want to treat as beverages
+  return classifyBeverageByGeometry(det);
+}
+
+function normalizeDetections(rawDetections) {
+  if (!Array.isArray(rawDetections)) return [];
+  return rawDetections.map(det => {
+    const normalizedClass = classifyDetection(det);
+    const original = det?.class;
+    const tags = new Set();
+    if (normalizedClass && normalizedClass !== 'unknown') tags.add(normalizedClass);
+    if (original) tags.add(String(original).toLowerCase());
+
+    return {
+      ...det,
+      originalClass: original,
+      class: normalizedClass,
+      tags: Array.from(tags),
+    };
+  });
+}
+
 function runPythonWithBin(pyBin, args, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(pyBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -106,9 +186,12 @@ export async function detectOnServer(imagePath) {
       else throw e;
     }
 
+    const rawDetections = Array.isArray(parsed?.detections) ? parsed.detections : [];
+    const detections = normalizeDetections(rawDetections);
+
     return {
       supported: true,
-      detections: Array.isArray(parsed?.detections) ? parsed.detections : [],
+      detections,
       frame: parsed?.frame || null,
     };
   } catch (e) {
@@ -200,7 +283,7 @@ export async function enhanceDetectionsWithSmartCookieDetection(imagePath, yoloD
     fs.writeFileSync(tempDetectionsPath, JSON.stringify(detectionsArray, null, 2));
     
     // Call smart cookie detector
-    const result = await runPythonWithBin(pyBin, [
+    const { stdout, stderr } = await runPythonWithBin(pyBin, [
       smartDetectorScript,
       imagePath,
       tempDetectionsPath
@@ -208,15 +291,36 @@ export async function enhanceDetectionsWithSmartCookieDetection(imagePath, yoloD
     
     // Clean up temp file
     try { fs.unlinkSync(tempDetectionsPath); } catch {}
-    
-    // Parse enhanced detections
-    const enhancedDetections = JSON.parse(result);
+
+    const output = (stdout || '').trim();
+    if (!output) {
+      throw new Error(stderr?.trim() || 'Smart cookie detector produced no output');
+    }
+
+    let enhancedDetections;
+    try {
+      enhancedDetections = JSON.parse(output);
+    } catch (parseError) {
+      const start = output.indexOf('[');
+      const end = output.lastIndexOf(']');
+      if (start >= 0 && end > start) {
+        enhancedDetections = JSON.parse(output.slice(start, end + 1));
+      } else {
+        throw parseError;
+      }
+    }
+
+    if (!Array.isArray(enhancedDetections)) {
+      throw new Error('Smart cookie detector returned invalid payload');
+    }
+
+    const normalizedEnhanced = normalizeDetections(enhancedDetections);
     
     console.log(`[enhanceDetectionsWithSmartCookieDetection] Enhanced ${detectionsArray.length} → ${enhancedDetections.length} detections`);
     
     return {
       success: true,
-      detections: enhancedDetections
+      detections: normalizedEnhanced
     };
     
   } catch (error) {
@@ -332,18 +436,11 @@ export function estimateVisualOccupancyHeuristic(detections, frameWidth, frameHe
     }
 
     // Snack detection heuristic (Coca, colorful items, galletas)
-    const isSnack = det.class && (
-      det.class.toLowerCase().includes('coke') || 
-      det.class.toLowerCase().includes('coca') ||
-      det.class.toLowerCase().includes('galleta') ||
-      det.class.toLowerCase().includes('snack') ||
-      det.class.toLowerCase().includes('cookie')
-    );
+    const label = String(det.class || '').toLowerCase();
+
+    const isSnack = label.includes('cookie') || label.includes('snack') || label.includes('galleta');
     
-    const isBottleOrCan = det.class && (
-      det.class.toLowerCase().includes('bottle') ||
-      det.class.toLowerCase().includes('can')
-    );
+    const isBottleOrCan = label.includes('bottle') || label.includes('water') || label.includes('can') || label.includes('juice');
 
     if (isSnack) snackArea += area;
     if (isBottleOrCan) colorfulItems += area;

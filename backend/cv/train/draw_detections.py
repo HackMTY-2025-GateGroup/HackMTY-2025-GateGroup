@@ -145,6 +145,7 @@ def draw_detection_boxes(image_path, detections, output_path, analysis_id):
         
         x, y, w, h = det['bbox']
         x, y, w, h = int(x), int(y), int(w), int(h)
+        cls = str(det.get('class', '')).lower()
         
         # Check if inside valid drawer
         inside, drawer_name = is_inside_drawer((x, y, w, h), height)
@@ -161,7 +162,17 @@ def draw_detection_boxes(image_path, detections, output_path, analysis_id):
             cv2.rectangle(img, (x, y), (x + w, y + h), color, 3)
             
             # Label with class and fill level
-            label = f"{det.get('class', 'unknown')} - {fill_level}"
+            display_name = 'Product'
+            if cls in ('cookie', 'snack', 'galleta'):
+                display_name = 'Cookie'
+            elif cls in ('can', 'cans'):
+                display_name = 'Can'
+            elif cls in ('juice_box', 'juice', 'carton'):
+                display_name = 'Juice Box'
+            elif cls in ('bottle_water', 'water', 'bottle', 'cup', 'coke', 'cola'):
+                display_name = 'Bottle'
+
+            label = f"{display_name} - {fill_level}"
             label_bg_color = color
             
             # Draw label background

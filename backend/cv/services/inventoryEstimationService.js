@@ -6,16 +6,26 @@ import { supabaseAdmin } from '../../config/supabase.js';
 // Base mapping for direct label matches
 const CLASS_TO_PRODUCT_MAP = {
   'can': { type: 'can_355ml', label: 'Can 355 ml', maxPerTray: 15 },
+  'cans': { type: 'can_355ml', label: 'Can 355 ml', maxPerTray: 15 },
   'cup': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
   'snack': { type: 'cookie_30g', label: 'Cookie 30g', maxPerTray: 64 },
+  'cookie': { type: 'cookie_30g', label: 'Cookie 30g', maxPerTray: 64 },
   'juice': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
   'carton': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
+  'juice_box': { type: 'juice_946ml', label: 'Juice 946 ml', maxPerTray: 4 },
+  'bottle_water': { type: 'water_1_5l', label: 'Water 1.5 L', maxPerTray: 3 },
+  'water_bottle': { type: 'water_1_5l', label: 'Water 1.5 L', maxPerTray: 3 },
+  'water': { type: 'water_1_5l', label: 'Water 1.5 L', maxPerTray: 3 },
 };
 
 function inferProductFromDetection(det) {
   // Heuristic mapping when YOLO label is too generic (e.g., 'bottle')
   const raw = String(det.class || '').toLowerCase();
-  if (CLASS_TO_PRODUCT_MAP[raw]) return CLASS_TO_PRODUCT_MAP[raw];
+  const tags = Array.isArray(det?.tags) ? det.tags : [];
+  for (const tag of tags) {
+    const normalized = CLASS_TO_PRODUCT_MAP[tag];
+    if (normalized) return normalized;
+  }
 
   // Cartons often labeled as 'box', 'milk', 'carton'
   if (raw.includes('carton') || raw.includes('box') || raw.includes('milk')) {
