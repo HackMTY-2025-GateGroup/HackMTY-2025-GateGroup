@@ -24,12 +24,18 @@ const config = {
     photoAnalysis: '/api/photos/analyze',
     photoList: '/api/photos',
     
+    // Tray Analysis (Computer Vision)
+    analyzeTray: '/api/occupancy/analyze-tray',
+    occupancyLatest: '/api/occupancy/latest',
+    
     // Chatbot
     chatbot: '/api/chatbot',
     chatHistory: '/api/chat/history',
     
     // User Administration
     users: '/api/users',
+    // Fleet / Trolleys
+    trolleys: '/api/trolleys',
     roles: '/api/roles',
     permissions: '/api/permissions',
   },
