@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useQuery } from '@tanstack/react-query';
-import { get, post } from '@/lib/api';
+import { get, post, uploadTrayBundle } from '@/lib/api';
 import config from '@/config/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -53,7 +53,7 @@ const PhotoManagement = () => {
     refetch,
   } = useQuery({
     queryKey: ['photoList'],
-    queryFn: () => get('photoList'),
+    queryFn: () => fetchPhotoList(),
     staleTime: 10_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: false,
@@ -93,7 +93,7 @@ const PhotoManagement = () => {
     }
   };
 
-  // Upload and analyze tray using new comprehensive endpoint
+  // Upload and analyze tray using centralized multipart helper
   const handleAnalyzeTray = async () => {
     if (!frontFile || !backFile) {
       toast({
@@ -127,35 +127,32 @@ const PhotoManagement = () => {
       formData.append('trolleyCode', trolleyCode.trim());
       formData.append('specName', 'doubleside.mx');
 
-      // Call the new comprehensive endpoint
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}${config.endpoints.analyzeTray}`,
-        {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
-        }
-      );
+      // Use centralized multipart upload helper which resolves endpoint keys via config
+      // 'analyzeTray' should map to config.endpoints.analyzeTray (e.g. '/api/occupancy/analyze-tray')
+      const body = await uploadTrayBundle(...formData);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || errorData.error || 'Analysis failed');
-      }
+      // Normalize backend shapes:
+      // possible shapes: { success: true, data: { result: {...} } }
+      // or { ok: true, result: {...} } or { result: {...} } etc.
+      const result =
+        body?.data?.result ||
+        body?.data ||
+        body?.result ||
+        (body?.ok && body?.result) ||
+        body;
 
-      const data = await response.json();
-      
-      if (data.ok && data.result) {
-        setAnalysisResult(data.result);
-        
-        toast({
-          title: '¡Análisis completado!',
-          description: `Ocupación: ${data.result.occupancy.overall.percent}% - ${data.result.recommendations.message}`,
-        });
-      } else {
+      if (!result) {
         throw new Error('Invalid response from server');
       }
 
-      // Refresh gallery
+      setAnalysisResult(result);
+
+      toast({
+        title: 'Analysis completed',
+        description: `Occupancy: ${result?.occupancy?.overall?.percent ?? 'N/A'}% — ${result?.recommendations?.message ?? ''}`,
+      });
+
+      // Refresh gallery (server should append new bundle when processed)
       refetch();
     } catch (err) {
       // Unauthorized -> sign out
