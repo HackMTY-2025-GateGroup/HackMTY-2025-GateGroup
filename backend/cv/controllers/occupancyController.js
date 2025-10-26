@@ -382,6 +382,12 @@ export async function postAnalyzeTray(req, res) {
       side: 'back',
     });
 
+    // Visual occupancy fallback/boost using pixel statistics
+    const [frontVisual, backVisual] = await Promise.all([
+      computeTrayVisualOccupancy({ imagePath: frontFile.path, spec: { ...spec, trays: spec.trays.filter(t => (t.side||'front')==='front') } }),
+      computeTrayVisualOccupancy({ imagePath: backFile.path,  spec: { ...spec, trays: spec.trays.filter(t => (t.side||'front')==='back') } }),
+    ]);
+
     // Calculate inventory estimation for both sides
     console.log('[postAnalyzeTray] Computing inventory...');
     const frontInventory = calculateMissingProducts({
