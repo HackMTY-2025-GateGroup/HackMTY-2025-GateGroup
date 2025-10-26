@@ -55,7 +55,10 @@ export async function detectOnServer(imagePath) {
   try {
     const weights = resolveWeightsPath();
     const script = path.resolve(__dirname, '..', 'train', 'quick_infer.py');
-    const baseArgs = [script, '--weights', weights, '--image', imagePath, '--imgsz', '640', '--conf', '0.25', '--iou', '0.7'];
+    const imgsz = String(process.env.YOLO_IMGSZ || '960');
+    const conf = String(process.env.YOLO_CONF || '0.15');
+    const iou = String(process.env.YOLO_IOU || '0.6');
+    const baseArgs = [script, '--weights', weights, '--image', imagePath, '--imgsz', imgsz, '--conf', conf, '--iou', iou];
 
     // Try multiple Python executables for cross-platform support
     const candidates = [];

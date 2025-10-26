@@ -1,0 +1,6 @@
+path: ./dataset
+train: images/train_boot
+val: images/val_boot
+
+names:
+  0: bottle
